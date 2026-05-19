@@ -1,0 +1,16 @@
+[package]
+name = "topoi-cli"
+description = "CLI for the Topoi geometry engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "topoi"
+path = "src/main.rs"
+
+[dependencies]
+topoi-core.workspace = true
+clap = { version = "4", features = ["derive"] }
