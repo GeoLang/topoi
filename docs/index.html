@@ -1,8 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Topoi Documentation</title></head>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Topoi — Pure-Rust Computational Geometry Engine</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--heading:#f0f6fc;--accent:#58a6ff;--accent2:#3fb950;--muted:#8b949e}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
+header{border-bottom:1px solid var(--border);padding:64px 0 40px;text-align:center}
+header h1{font-size:3.5rem;color:var(--heading);margin-bottom:12px}
+header .tagline{font-size:1.3rem;color:var(--muted);max-width:750px;margin:0 auto}
+.badges{margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.badges img{height:24px}
+.hero{display:flex;gap:16px;justify-content:center;margin-top:28px;flex-wrap:wrap}
+.hero a{background:var(--accent);color:#fff;padding:12px 28px;border-radius:6px;font-weight:600;font-size:1rem;transition:opacity .2s}
+.hero a:hover{text-decoration:none;opacity:.85}
+.hero a.secondary{background:var(--card);border:1px solid var(--border)}
+section{padding:56px 0}
+section h2{font-size:1.9rem;color:var(--heading);margin-bottom:28px;border-bottom:1px solid var(--border);padding-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px}
+.card h3{color:var(--heading);margin-bottom:8px;font-size:1.1rem}
+.card ul{list-style:none;padding:0;margin:0}
+.card ul li{padding:3px 0;color:var(--text);font-size:.9rem}
+.card ul li::before{content:"✓ ";color:var(--accent2);font-weight:bold}
+code{background:#1c2128;padding:2px 6px;border-radius:4px;font-size:.85em;color:#f0f6fc}
+pre{background:#1c2128;border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto;font-size:.85rem;color:#f0f6fc;margin:12px 0}
+footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--muted);font-size:.85rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-top:24px}
+.stat{text-align:center;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:8px}
+.stat .num{font-size:2rem;color:var(--heading);font-weight:bold}
+.stat .label{color:var(--muted);font-size:.85rem;margin-top:4px}
+@media(max-width:600px){header h1{font-size:2.2rem}.grid{grid-template-columns:1fr}}
+</style>
+</head>
 <body>
-<h1>Topoi</h1>
-<p>Pure-Rust computational geometry engine. See <code>cargo doc --open</code> for API reference.</p>
+<header>
+<div class="container">
+<h1>📐 Topoi</h1>
+<p class="tagline">Pure-Rust computational geometry engine — spatial predicates, boolean operations, buffering, and topology.</p>
+<div class="badges">
+<img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
+<img src="https://img.shields.io/badge/Rust-2024-orange" alt="Rust">
+<img src="https://img.shields.io/badge/tests-passing-brightgreen" alt="Tests">
+</div>
+<div class="hero">
+<a href="https://github.com/TileTopia-HQ/topoi">GitHub</a>
+<a href="https://github.com/TileTopia-HQ/topoi#usage" class="secondary">Quick Start</a>
+<a href="#features" class="secondary">Features</a>
+</div>
+<div class="stats">
+<div class="stat"><div class="num">6</div><div class="label">Geometry types</div></div>
+<div class="stat"><div class="num">5</div><div class="label">Predicates</div></div>
+<div class="stat"><div class="num">0</div><div class="label">C dependencies</div></div>
+<div class="stat"><div class="num">∞</div><div class="label">Precision (f64)</div></div>
+</div>
+</div>
+</header>
+
+<section>
+<div class="container">
+<h2 id="features">Features</h2>
+<div class="grid">
+<div class="card">
+<h3>📊 Geometry Types</h3>
+<ul>
+<li>Point, Coord (2D)</li>
+<li>LineString (open polyline)</li>
+<li>Ring (closed, oriented)</li>
+<li>Polygon (exterior + holes)</li>
+<li>MultiPolygon (collection)</li>
+<li>Envelope (AABB)</li>
+</ul>
+</div>
+<div class="card">
+<h3>🔍 Spatial Predicates</h3>
+<ul>
+<li>Point-in-polygon (ray casting)</li>
+<li>Polygon-polygon envelope intersection</li>
+<li>Contains with hole exclusion</li>
+<li>Envelope containment</li>
+<li>Ring winding detection (CCW/CW)</li>
+</ul>
+</div>
+<div class="card">
+<h3>📏 Measurements</h3>
+<ul>
+<li>Polygon area (Shoelace formula)</li>
+<li>Signed area (winding-aware)</li>
+<li>LineString length</li>
+<li>Polygon centroid</li>
+<li>Point-to-point distance</li>
+</ul>
+</div>
+<div class="card">
+<h3>🛡️ Operations</h3>
+<ul>
+<li>Polygon buffering (vertex offset)</li>
+<li>Envelope union &amp; intersection test</li>
+<li>Ring closure validation</li>
+<li>Convex polygon support</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2>Quick Start</h2>
+<pre><code>use topoi_core::{Coord, Polygon, Ring, contains};
+
+let ring = Ring::new(vec![
+    Coord::new(0.0, 0.0), Coord::new(4.0, 0.0),
+    Coord::new(4.0, 4.0), Coord::new(0.0, 4.0),
+    Coord::new(0.0, 0.0),
+]);
+let polygon = Polygon::new(ring, vec![]);
+assert!(contains(&amp;polygon, &amp;Coord::new(2.0, 2.0)));</code></pre>
+</div>
+</section>
+
+<footer>
+<div class="container">
+<p>Part of the <a href="https://github.com/TileTopia-HQ">TileTopia-HQ</a> GIS stack. Licensed under AGPL-3.0-or-later.</p>
+</div>
+</footer>
 </body>
 </html>
