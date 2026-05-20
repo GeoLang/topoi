@@ -11,6 +11,7 @@ mod envelope;
 mod error;
 pub mod geojson;
 mod geometry;
+pub mod parcel;
 mod predicates;
 mod rtree;
 
