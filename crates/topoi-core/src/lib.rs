@@ -5,6 +5,7 @@
 
 mod algorithms;
 mod buffer;
+mod clipping;
 mod envelope;
 mod error;
 mod geometry;
@@ -12,6 +13,9 @@ mod predicates;
 
 pub use algorithms::{convex_hull, segment_intersection, simplify};
 pub use buffer::buffer_polygon;
+pub use clipping::{
+    clip_polygon, clip_polygon_rect, intersection_area, polygon_intersection, union_area,
+};
 pub use envelope::Envelope;
 pub use error::Error;
 pub use geometry::{Coord, LineString, MultiPolygon, Point, Polygon, Ring};
