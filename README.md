@@ -1,8 +1,8 @@
 # Topoi
 
-Pure-Rust computational geometry engine for the TileTopia-HQ GIS stack.
+Pure-Rust computational geometry engine for the GeoLang GIS stack.
 
-[Documentation](https://tiletopia-hq.github.io/topoi/) · [GitHub](https://github.com/TileTopia-HQ/topoi)
+[Documentation](https://geolang.github.io/topoi/) · [GitHub](https://github.com/GeoLang/topoi)
 
 ## Features
 
