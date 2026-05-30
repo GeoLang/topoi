@@ -12,4 +12,5 @@ description = "Topological spatial relationships and operations"
 rust-version = "1.85"
 
 [workspace.dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 topoi-core = { path = "crates/topoi-core" }
