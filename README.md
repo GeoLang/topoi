@@ -19,6 +19,7 @@ Pure-Rust computational geometry engine for the GeoLang GIS stack.
 - **R-tree spatial index** — bulk-loaded, bounding-box queries, nearest-neighbor
 - **GeoJSON I/O** — read/write FeatureCollections
 - **Parcel operations** — subdivision and merge utilities
+- **WebAssembly SDK** — `topoi-wasm` crate exposing convex hull, buffer, clip, Delaunay, simplify, point-in-polygon, polygon intersection, and bounding box to JavaScript via `wasm-bindgen`
 
 ## Usage
 
