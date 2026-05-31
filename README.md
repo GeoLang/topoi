@@ -1,5 +1,8 @@
 # Topoi
 
+[![CI](https://github.com/GeoLang/topoi/actions/workflows/ci.yml/badge.svg)](https://github.com/GeoLang/topoi/actions)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+
 Pure-Rust computational geometry engine for the GeoLang GIS stack.
 
 [Documentation](https://geolang.github.io/topoi/) · [GitHub](https://github.com/GeoLang/topoi)
