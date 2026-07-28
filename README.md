@@ -70,6 +70,7 @@ topoi area --ring 0,0,4,0,4,4,0,4,0,0
 
 ```
 topoi-core    — geometry types, algorithms, predicates, R-tree
+topoi-wasm    — wasm-bindgen bindings for the browser
 topoi-cli     — command-line interface
 ```
 
