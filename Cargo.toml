@@ -9,7 +9,7 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/GeoLang/topoi"
 authors = ["GeoLang <tiletopia@proton.me>"]
 description = "Topological spatial relationships and operations"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [workspace.dependencies]
 proptest = "1"

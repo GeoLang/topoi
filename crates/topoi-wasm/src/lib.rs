@@ -6,8 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 use topoi_core::{
-    Coord, Polygon, Ring, buffer_polygon, clip_polygon_rect, contains, convex_hull, delaunay,
-    intersects, simplify,
+    BooleanOp, Coord, MultiPolygon, Polygon, Ring, boolean_op, buffer_polygon, contains,
+    convex_hull, delaunay, intersects, simplify,
 };
 use wasm_bindgen::prelude::*;
 
@@ -60,6 +60,16 @@ fn polygon_to_js(p: &Polygon) -> JsPolygon {
     }
 }
 
+fn multipolygon_to_js(mp: &MultiPolygon) -> Vec<JsPolygon> {
+    mp.polygons().iter().map(polygon_to_js).collect()
+}
+
+fn js_to_polygons(value: JsValue) -> Result<Vec<Polygon>, JsError> {
+    let polygons: Vec<JsPolygon> =
+        serde_wasm_bindgen::from_value(value).map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(polygons.iter().map(js_to_polygon).collect())
+}
+
 /// Compute the convex hull of a set of points.
 /// Input: JSON array of {x, y} objects.
 /// Returns: JSON array of {x, y} objects forming the hull polygon exterior.
@@ -91,7 +101,9 @@ pub fn wasm_buffer_polygon(polygon_js: JsValue, distance: f64) -> Result<JsValue
 }
 
 /// Clip a polygon to a rectangle (bbox).
-/// Returns: JsPolygon JSON of the clipped result.
+/// Input: JsPolygon JSON, bbox bounds.
+/// Returns: JSON array of JsPolygon, since a clip can split the input into
+/// several pieces or leave holes intact.
 #[wasm_bindgen(js_name = "clipToRect")]
 pub fn wasm_clip_to_rect(
     polygon_js: JsValue,
@@ -103,14 +115,59 @@ pub fn wasm_clip_to_rect(
     let jp: JsPolygon =
         serde_wasm_bindgen::from_value(polygon_js).map_err(|e| JsError::new(&e.to_string()))?;
 
-    let coords = coords_to_points(&jp.exterior);
-    let clipped = clip_polygon_rect(&coords, min_x, min_y, max_x, max_y);
-    let result = JsPolygon {
-        exterior: points_to_js(&clipped),
-        holes: vec![],
-    };
+    let rect = Polygon::from_coords(&[
+        Coord::new(min_x, min_y),
+        Coord::new(max_x, min_y),
+        Coord::new(max_x, max_y),
+        Coord::new(min_x, max_y),
+    ]);
+    let clipped = boolean_op(&js_to_polygon(&jp), &rect, BooleanOp::Intersection);
+    let result = multipolygon_to_js(&clipped);
 
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Union of two polygon sets.
+/// Input: two JSON arrays of JsPolygon.
+/// Returns: JSON array of JsPolygon.
+#[wasm_bindgen(js_name = "polygonUnion")]
+pub fn wasm_polygon_union(subject_js: JsValue, clip_js: JsValue) -> Result<JsValue, JsError> {
+    overlay(subject_js, clip_js, BooleanOp::Union)
+}
+
+/// Intersection of two polygon sets.
+/// Input: two JSON arrays of JsPolygon.
+/// Returns: JSON array of JsPolygon.
+#[wasm_bindgen(js_name = "polygonIntersection")]
+pub fn wasm_polygon_intersection(
+    subject_js: JsValue,
+    clip_js: JsValue,
+) -> Result<JsValue, JsError> {
+    overlay(subject_js, clip_js, BooleanOp::Intersection)
+}
+
+/// Subject minus clip.
+/// Input: two JSON arrays of JsPolygon.
+/// Returns: JSON array of JsPolygon.
+#[wasm_bindgen(js_name = "polygonDifference")]
+pub fn wasm_polygon_difference(subject_js: JsValue, clip_js: JsValue) -> Result<JsValue, JsError> {
+    overlay(subject_js, clip_js, BooleanOp::Difference)
+}
+
+/// Symmetric difference of two polygon sets.
+/// Input: two JSON arrays of JsPolygon.
+/// Returns: JSON array of JsPolygon.
+#[wasm_bindgen(js_name = "polygonXor")]
+pub fn wasm_polygon_xor(subject_js: JsValue, clip_js: JsValue) -> Result<JsValue, JsError> {
+    overlay(subject_js, clip_js, BooleanOp::Xor)
+}
+
+fn overlay(subject_js: JsValue, clip_js: JsValue, op: BooleanOp) -> Result<JsValue, JsError> {
+    let subject = js_to_polygons(subject_js)?;
+    let clip = js_to_polygons(clip_js)?;
+    let result = boolean_op(&subject, &clip, op);
+    serde_wasm_bindgen::to_value(&multipolygon_to_js(&result))
+        .map_err(|e| JsError::new(&e.to_string()))
 }
 
 /// Compute Delaunay triangulation of a point set.
@@ -280,6 +337,39 @@ mod tests {
         let outside = Coord { x: 15.0, y: 5.0 };
         assert!(contains(&polygon, &inside));
         assert!(!contains(&polygon, &outside));
+    }
+
+    #[test]
+    fn test_multipolygon_to_js() {
+        let square = Polygon::from_coords(&[
+            Coord { x: 0.0, y: 0.0 },
+            Coord { x: 1.0, y: 0.0 },
+            Coord { x: 1.0, y: 1.0 },
+            Coord { x: 0.0, y: 1.0 },
+        ]);
+        let js = multipolygon_to_js(&MultiPolygon::new(vec![square.clone(), square]));
+        assert_eq!(js.len(), 2);
+        assert_eq!(js[0].exterior.len(), 4);
+    }
+
+    #[test]
+    fn test_overlay_difference_yields_hole() {
+        let outer = Polygon::from_coords(&[
+            Coord { x: 0.0, y: 0.0 },
+            Coord { x: 10.0, y: 0.0 },
+            Coord { x: 10.0, y: 10.0 },
+            Coord { x: 0.0, y: 10.0 },
+        ]);
+        let inner = Polygon::from_coords(&[
+            Coord { x: 4.0, y: 4.0 },
+            Coord { x: 6.0, y: 4.0 },
+            Coord { x: 6.0, y: 6.0 },
+            Coord { x: 4.0, y: 6.0 },
+        ]);
+        let result = boolean_op(&outer, &inner, BooleanOp::Difference);
+        let js = multipolygon_to_js(&result);
+        assert_eq!(js.len(), 1);
+        assert_eq!(js[0].holes.len(), 1);
     }
 
     #[test]

@@ -1,6 +1,7 @@
-//! Parcel operations: split by line, merge adjacent polygons.
+//! Parcel operations: split by line, merge adjacent or overlapping polygons.
 
-use crate::geometry::Coord;
+use crate::geometry::{Coord, Polygon, signed_ring_area};
+use crate::overlay::union;
 
 /// Split a polygon by a line defined by two points.
 ///
@@ -66,80 +67,28 @@ pub fn split_polygon(
     Some((poly_a, poly_b))
 }
 
-/// Merge two polygons that share a common edge.
+/// Merge two adjacent or overlapping polygons into one.
 ///
-/// Finds the longest shared edge segment and removes it,
-/// producing a single merged polygon. Returns None if no shared edge.
+/// Runs a general union, so the inputs may be concave and may overlap instead of
+/// only touching along an edge. Returns None when the union cannot be expressed
+/// as a single ring: disjoint inputs, or a union that encloses a hole.
 pub fn merge_polygons(poly_a: &[Coord], poly_b: &[Coord]) -> Option<Vec<Coord>> {
     if poly_a.len() < 3 || poly_b.len() < 3 {
         return None;
     }
 
-    // Find shared vertices (within tolerance)
-    const EPS: f64 = 1e-8;
-    let mut shared_a: Vec<usize> = Vec::new();
-    let mut shared_b: Vec<usize> = Vec::new();
-
-    for (ia, a) in poly_a.iter().enumerate() {
-        for (ib, b) in poly_b.iter().enumerate() {
-            if (a.x - b.x).abs() < EPS && (a.y - b.y).abs() < EPS {
-                shared_a.push(ia);
-                shared_b.push(ib);
-            }
-        }
-    }
-
-    if shared_a.len() < 2 {
+    let merged = union(&Polygon::from_coords(poly_a), &Polygon::from_coords(poly_b));
+    let [polygon] = merged.polygons() else {
+        return None;
+    };
+    if !polygon.interiors().is_empty() {
         return None;
     }
 
-    // Find consecutive shared edge in poly_a
-    // We need at least 2 consecutive shared vertices in poly_a
-    let na = poly_a.len();
-    let mut start_a = None;
-    let mut end_a = None;
-
-    for &ia in &shared_a {
-        let next = (ia + 1) % na;
-        if shared_a.contains(&next) {
-            if start_a.is_none() {
-                start_a = Some(ia);
-            }
-            end_a = Some(next);
-        }
-    }
-
-    let start_a = start_a?;
-    let end_a = end_a?;
-
-    // Find corresponding indices in poly_b
-    let start_b = shared_b[shared_a.iter().position(|&x| x == end_a)?];
-    let end_b = shared_b[shared_a.iter().position(|&x| x == start_a)?];
-
-    // Build merged polygon:
-    // Walk poly_a from end_a (exclusive of shared edge) back to start_a,
-    // then walk poly_b from start_b (exclusive of shared edge) back to end_b
-    let mut result = Vec::new();
-    let nb = poly_b.len();
-
-    // Add poly_a vertices from end_a to start_a (skipping shared edge)
-    let mut i = (end_a + 1) % na;
-    loop {
-        result.push(poly_a[i]);
-        if i == start_a {
-            break;
-        }
-        i = (i + 1) % na;
-    }
-
-    // Add poly_b vertices from end_b to start_b (skipping shared edge)
-    i = (end_b + 1) % nb;
-    loop {
-        if i == start_b {
-            break;
-        }
-        result.push(poly_b[i]);
-        i = (i + 1) % nb;
+    // This module treats rings as implicitly closed, so drop the repeated coord.
+    let mut result = polygon.exterior().coords().to_vec();
+    if result.len() > 1 && result.first() == result.last() {
+        result.pop();
     }
 
     if result.len() >= 3 {
@@ -151,17 +100,7 @@ pub fn merge_polygons(poly_a: &[Coord], poly_b: &[Coord]) -> Option<Vec<Coord>> 
 
 /// Compute signed area of a polygon (positive = CCW).
 pub fn polygon_area(coords: &[Coord]) -> f64 {
-    let n = coords.len();
-    if n < 3 {
-        return 0.0;
-    }
-    let mut area = 0.0;
-    for i in 0..n {
-        let j = (i + 1) % n;
-        area += coords[i].x * coords[j].y;
-        area -= coords[j].x * coords[i].y;
-    }
-    area / 2.0
+    signed_ring_area(coords)
 }
 
 /// Line-segment intersection. Returns intersection point if segments cross.

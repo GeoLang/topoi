@@ -1,8 +1,14 @@
-use crate::geometry::Coord;
+use crate::geometry::{Coord, Polygon};
+use crate::overlay;
 
 /// Sutherland-Hodgman polygon clipping algorithm.
 ///
-/// Clips a subject polygon against a convex clip polygon.
+/// Fast path for clipping against a convex window, which is what viewport and
+/// tile clipping need. The clip polygon must be convex and wound
+/// counter-clockwise, and a concave subject whose clipped result is disconnected
+/// comes back as one ring joined by degenerate edges rather than as separate
+/// pieces. Use [`intersection`](crate::intersection) for the general case.
+///
 /// Both polygons are given as ordered vertex lists (closed or open — last vertex
 /// is implicitly connected back to first).
 ///
@@ -58,7 +64,8 @@ pub fn clip_polygon(subject: &[Coord], clip: &[Coord]) -> Vec<Coord> {
 
 /// Clip a polygon against an axis-aligned bounding box.
 ///
-/// More efficient than general polygon clipping for rectangular clips.
+/// A rectangle is always convex, so this is the fast path of [`clip_polygon`]
+/// and carries the same caveat about disconnected results.
 pub fn clip_polygon_rect(
     subject: &[Coord],
     min_x: f64,
@@ -75,33 +82,11 @@ pub fn clip_polygon_rect(
     clip_polygon(subject, &clip_rect)
 }
 
-/// Compute the intersection (boolean AND) of two convex polygons.
+/// Compute the intersection area of two polygon rings.
 ///
-/// Uses Sutherland-Hodgman since clipping a convex polygon by a convex polygon
-/// always produces a convex result.
-pub fn polygon_intersection(poly_a: &[Coord], poly_b: &[Coord]) -> Vec<Coord> {
-    clip_polygon(poly_a, poly_b)
-}
-
-/// Compute the area of a polygon using the shoelace formula.
-fn polygon_area(vertices: &[Coord]) -> f64 {
-    if vertices.len() < 3 {
-        return 0.0;
-    }
-    let mut area = 0.0;
-    let n = vertices.len();
-    for i in 0..n {
-        let j = (i + 1) % n;
-        area += vertices[i].x * vertices[j].y;
-        area -= vertices[j].x * vertices[i].y;
-    }
-    area.abs() / 2.0
-}
-
-/// Compute the intersection area of two convex polygons.
+/// Goes through the general overlay engine, so concave rings are handled.
 pub fn intersection_area(poly_a: &[Coord], poly_b: &[Coord]) -> f64 {
-    let clipped = polygon_intersection(poly_a, poly_b);
-    polygon_area(&clipped)
+    overlay::intersection(&Polygon::from_coords(poly_a), &Polygon::from_coords(poly_b)).area()
 }
 
 /// Determine if a point is on the "inside" (left side) of a directed edge.
@@ -133,15 +118,22 @@ fn line_intersection(p1: &Coord, p2: &Coord, p3: &Coord, p4: &Coord) -> Option<C
     Some(Coord::new(x1 + t * (x2 - x1), y1 + t * (y2 - y1)))
 }
 
-/// Compute the union area of two convex polygons.
-/// Union area = area(A) + area(B) - intersection_area(A, B)
+/// Compute the union area of two polygon rings.
+///
+/// Goes through the general overlay engine, so concave rings and disjoint
+/// operands are handled.
 pub fn union_area(poly_a: &[Coord], poly_b: &[Coord]) -> f64 {
-    polygon_area(poly_a) + polygon_area(poly_b) - intersection_area(poly_a, poly_b)
+    overlay::union(&Polygon::from_coords(poly_a), &Polygon::from_coords(poly_b)).area()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::signed_ring_area;
+
+    fn polygon_area(vertices: &[Coord]) -> f64 {
+        signed_ring_area(vertices).abs()
+    }
 
     #[test]
     fn test_clip_polygon_fully_inside() {

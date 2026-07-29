@@ -25,6 +25,23 @@ impl Point {
     }
 }
 
+/// Shoelace signed area of a coordinate loop (positive = CCW).
+///
+/// The loop is implicitly closed, so a repeated final coordinate is harmless.
+pub fn signed_ring_area(coords: &[Coord]) -> f64 {
+    let n = coords.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut area = 0.0;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += coords[i].x * coords[j].y;
+        area -= coords[j].x * coords[i].y;
+    }
+    area / 2.0
+}
+
 /// A linear ring (closed sequence of coordinates).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ring {
@@ -46,17 +63,7 @@ impl Ring {
 
     /// Signed area (positive = CCW, negative = CW).
     pub fn signed_area(&self) -> f64 {
-        let n = self.coords.len();
-        if n < 3 {
-            return 0.0;
-        }
-        let mut area = 0.0;
-        for i in 0..n - 1 {
-            let j = (i + 1) % n;
-            area += self.coords[i].x * self.coords[j].y;
-            area -= self.coords[j].x * self.coords[i].y;
-        }
-        area / 2.0
+        signed_ring_area(&self.coords)
     }
 
     pub fn area(&self) -> f64 {
@@ -105,6 +112,11 @@ impl Polygon {
             exterior,
             interiors,
         }
+    }
+
+    /// A polygon from a bare coordinate ring, without holes.
+    pub fn from_coords(coords: &[Coord]) -> Self {
+        Self::new(Ring::new(coords.to_vec()), vec![])
     }
 
     pub fn exterior(&self) -> &Ring {

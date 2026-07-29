@@ -15,14 +15,14 @@ Pure-Rust computational geometry engine for the GeoLang GIS stack.
 - **Buffering** — vertex-offset polygon buffer (convex)
 - **Convex hull** — Graham scan algorithm
 - **Delaunay triangulation** — incremental with Voronoi dual (circumcenters)
-- **Boolean operations** — polygon intersection, union area, intersection area
-- **Polygon clipping** — Sutherland-Hodgman (convex clip polygon), rectangle clipping
+- **Boolean operations** — general polygon overlay (union, intersection, difference, xor) on concave polygons, polygons with holes and multipolygons, via [i_overlay](https://crates.io/crates/i_overlay)
+- **Polygon clipping** — Sutherland-Hodgman fast path for convex clip windows, rectangle clipping
 - **Simplification** — Douglas-Peucker polyline/polygon simplification
 - **Segment intersection** — exact 2D line segment intersection detection
 - **R-tree spatial index** — bulk-loaded, bounding-box queries, nearest-neighbor
 - **GeoJSON I/O** — read/write FeatureCollections
 - **Parcel operations** — subdivision and merge utilities
-- **WebAssembly SDK** — `topoi-wasm` crate exposing convex hull, buffer, clip, Delaunay, simplify, point-in-polygon, polygon intersection, and bounding box to JavaScript via `wasm-bindgen`
+- **WebAssembly SDK** — `topoi-wasm` crate exposing convex hull, buffer, clip, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`
 
 ## Usage
 
@@ -59,11 +59,43 @@ let line = vec![
 let simplified = simplify(&line, 0.2);
 ```
 
+### Boolean overlay
+
+`union`, `intersection`, `difference` and `xor` take a `Polygon`, a
+`MultiPolygon` or a slice of polygons on either side, and always return a
+`MultiPolygon` because any of them can split the input or punch holes in it.
+
+```rust
+use topoi_core::{Coord, Polygon, difference, union};
+
+let outer = Polygon::from_coords(&[
+    Coord::new(0.0, 0.0), Coord::new(10.0, 0.0),
+    Coord::new(10.0, 10.0), Coord::new(0.0, 10.0),
+]);
+let inner = Polygon::from_coords(&[
+    Coord::new(4.0, 4.0), Coord::new(6.0, 4.0),
+    Coord::new(6.0, 6.0), Coord::new(4.0, 6.0),
+]);
+
+// One polygon with a hole, area 96
+let holed = difference(&outer, &inner);
+assert_eq!(holed.polygons()[0].interiors().len(), 1);
+
+// Filling the hole back in
+let whole = union(&holed, &inner);
+assert!((whole.area() - 100.0).abs() < 1e-9);
+```
+
+Interior rings are treated as holes whatever winding they were given, and
+results follow the GeoJSON right-hand rule: exteriors counter-clockwise, holes
+clockwise.
+
 ## CLI
 
 ```sh
 topoi contains --px 2 --py 2 --ring 0,0,4,0,4,4,0,4,0,0
 topoi area --ring 0,0,4,0,4,4,0,4,0,0
+topoi overlay --op union --subject 0,0,2,0,2,2,0,2 --clip 1,1,3,1,3,3,1,3
 ```
 
 ## Architecture

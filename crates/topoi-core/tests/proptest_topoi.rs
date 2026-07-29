@@ -1,6 +1,33 @@
 use proptest::prelude::*;
 use topoi_core::*;
 
+/// The overlay engine snaps coordinates onto an integer grid sized to the input
+/// extent, so areas match only to a relative tolerance.
+fn tolerance(area: f64) -> f64 {
+    1e-6 * (1.0 + area)
+}
+
+fn polygon(coords: &[(f64, f64)]) -> Polygon {
+    let mut ring: Vec<Coord> = coords.iter().map(|&(x, y)| Coord::new(x, y)).collect();
+    ring.push(ring[0]);
+    Polygon::new(Ring::new(ring), vec![])
+}
+
+/// A concave L: the w by h box with its top-right corner cut out. Yields the
+/// polygon and its exact area.
+fn l_shape() -> impl Strategy<Value = (Polygon, f64)> {
+    (1.0f64..100.0, 1.0f64..100.0, 0.1f64..0.9, 0.1f64..0.9).prop_map(|(w, h, fx, fy)| {
+        let (cx, cy) = (w * fx, h * fy);
+        let poly = polygon(&[(0.0, 0.0), (w, 0.0), (w, cy), (cx, cy), (cx, h), (0.0, h)]);
+        (poly, w * h - (w - cx) * (h - cy))
+    })
+}
+
+fn rectangle() -> impl Strategy<Value = Polygon> {
+    (-20.0f64..120.0, -20.0f64..120.0, 1.0f64..80.0, 1.0f64..80.0)
+        .prop_map(|(x, y, w, h)| polygon(&[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]))
+}
+
 proptest! {
     /// Ring area is always non-negative for CCW rings.
     #[test]
@@ -78,6 +105,49 @@ proptest! {
         let simplified = simplify(&points, epsilon);
         prop_assert!(simplified.len() <= points.len());
         prop_assert!(simplified.len() >= 2); // Always keeps first and last
+    }
+
+    /// Intersection and difference partition the subject: the two areas add
+    /// back up to the subject area, even for a concave subject.
+    #[test]
+    fn overlay_partitions_subject_area(
+        (subject, subject_area) in l_shape(),
+        clip in rectangle(),
+    ) {
+        let inter = intersection(&subject, &clip).area();
+        let diff = difference(&subject, &clip).area();
+        prop_assert!(
+            (inter + diff - subject_area).abs() < tolerance(subject_area),
+            "{inter} + {diff} != {subject_area}"
+        );
+    }
+
+    /// Inclusion-exclusion: area(A) + area(B) == area(A|B) + area(A&B).
+    #[test]
+    fn union_area_obeys_inclusion_exclusion(
+        (subject, subject_area) in l_shape(),
+        clip in rectangle(),
+    ) {
+        let clip_area = clip.area();
+        let both = union(&subject, &clip).area() + intersection(&subject, &clip).area();
+        prop_assert!(
+            (both - subject_area - clip_area).abs() < tolerance(subject_area + clip_area),
+            "{both} != {subject_area} + {clip_area}"
+        );
+    }
+
+    /// Xor is the union minus the intersection.
+    #[test]
+    fn xor_is_union_minus_intersection(
+        (subject, subject_area) in l_shape(),
+        clip in rectangle(),
+    ) {
+        let expected = union(&subject, &clip).area() - intersection(&subject, &clip).area();
+        let actual = xor(&subject, &clip).area();
+        prop_assert!(
+            (actual - expected).abs() < tolerance(subject_area + clip.area()),
+            "{actual} != {expected}"
+        );
     }
 
     /// Simplify preserves first and last point.
