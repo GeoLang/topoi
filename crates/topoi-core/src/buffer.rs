@@ -1,73 +1,88 @@
-use crate::geometry::{Coord, Polygon, Ring};
+//! Polygon buffering, backed by the i_overlay outline engine.
 
-/// Create a buffer polygon around a convex polygon by offsetting edges outward.
-/// This is a simplified implementation that works for convex polygons.
-/// For a full implementation, Minkowski sum or Vatti clipping would be used.
-pub fn buffer_polygon(polygon: &Polygon, distance: f64) -> Polygon {
+use crate::geometry::MultiPolygon;
+use crate::overlay::{PolygonSet, from_shapes, to_shapes};
+use i_overlay::mesh::outline::offset::OutlineOffset;
+use i_overlay::mesh::style::{LineJoin, OutlineStyle};
+use std::f64::consts::PI;
+
+/// Round joins take the maximum segment length over the arc radius, so this is
+/// about 32 segments for a full circle.
+const ROUND_JOIN_ANGLE: f64 = PI / 16.0;
+
+/// Corners sharper than this get cut off instead of spiking far out.
+const MITER_LIMIT_ANGLE: f64 = PI / 3.0;
+
+/// How a buffer outline turns a corner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinStyle {
+    /// Arc corners, which is what a GIS buffer normally means.
+    Round,
+    /// Sharp corners, cut off past a limit so spikes stay bounded.
+    Miter,
+    /// Corners cut off flat.
+    Bevel,
+}
+
+/// Buffer a polygon set by a distance, with round joins.
+///
+/// Positive grows, negative shrinks. Concave rings, holes and multipolygon
+/// operands all work. The result is a `MultiPolygon` because growing can merge
+/// separate pieces and shrinking can split one piece into several or erase it
+/// entirely.
+///
+/// ```
+/// use topoi_core::{Coord, JoinStyle, Polygon, buffer_polygon, buffer_polygon_with_join};
+///
+/// let square = Polygon::from_coords(&[
+///     Coord::new(0.0, 0.0), Coord::new(10.0, 0.0),
+///     Coord::new(10.0, 10.0), Coord::new(0.0, 10.0),
+/// ]);
+///
+/// // Shrinking a convex ring adds no arcs, so this is exactly 8x8
+/// let inset = buffer_polygon(&square, -1.0);
+/// assert!((inset.area() - 64.0).abs() < 1e-9);
+///
+/// // A negative distance past the inradius leaves nothing
+/// assert!(buffer_polygon(&square, -6.0).polygons().is_empty());
+///
+/// // Sharp corners instead of arcs
+/// let mitred = buffer_polygon_with_join(&square, 1.0, JoinStyle::Miter);
+/// assert!((mitred.area() - 144.0).abs() < 1e-9);
+/// ```
+pub fn buffer_polygon<S>(subject: &S, distance: f64) -> MultiPolygon
+where
+    S: PolygonSet + ?Sized,
+{
+    buffer_polygon_with_join(subject, distance, JoinStyle::Round)
+}
+
+/// Buffer a polygon set by a distance with an explicit join style.
+pub fn buffer_polygon_with_join<S>(subject: &S, distance: f64, join: JoinStyle) -> MultiPolygon
+where
+    S: PolygonSet + ?Sized,
+{
+    let polygons = subject.as_polygons();
     if distance == 0.0 {
-        return polygon.clone();
+        return MultiPolygon::new(polygons.to_vec());
     }
 
-    let coords = polygon.exterior().coords();
-    let n = coords.len();
-    if n < 4 {
-        return polygon.clone();
-    }
+    // to_shapes normalizes exteriors to CCW and holes to CW, which the outline
+    // engine needs: a reversed contour offsets the wrong way and vanishes.
+    let shapes = to_shapes(polygons);
+    let style = OutlineStyle::new(distance).line_join(match join {
+        JoinStyle::Round => LineJoin::Round(ROUND_JOIN_ANGLE),
+        JoinStyle::Miter => LineJoin::Miter(MITER_LIMIT_ANGLE),
+        JoinStyle::Bevel => LineJoin::Bevel,
+    });
 
-    // Approximate buffer by offsetting each vertex along the bisector of adjacent edges
-    let mut buffered = Vec::with_capacity(n);
-    for i in 0..n - 1 {
-        let prev = if i == 0 { n - 2 } else { i - 1 };
-        let next = (i + 1) % (n - 1);
-
-        // Edge vectors
-        let dx1 = coords[i].x - coords[prev].x;
-        let dy1 = coords[i].y - coords[prev].y;
-        let dx2 = coords[next].x - coords[i].x;
-        let dy2 = coords[next].y - coords[i].y;
-
-        // Normals (outward for CCW polygon)
-        let len1 = (dx1 * dx1 + dy1 * dy1).sqrt();
-        let len2 = (dx2 * dx2 + dy2 * dy2).sqrt();
-
-        if len1 == 0.0 || len2 == 0.0 {
-            buffered.push(coords[i]);
-            continue;
-        }
-
-        let nx1 = dy1 / len1;
-        let ny1 = -dx1 / len1;
-        let nx2 = dy2 / len2;
-        let ny2 = -dx2 / len2;
-
-        // Average normal direction (bisector approximation)
-        let nx = nx1 + nx2;
-        let ny = ny1 + ny2;
-        let nlen = (nx * nx + ny * ny).sqrt();
-
-        if nlen < 1e-10 {
-            buffered.push(coords[i]);
-            continue;
-        }
-
-        // Scale to maintain distance from original edges
-        let scale = distance / (nx * nx1 + ny * ny1).max(0.1);
-        buffered.push(Coord::new(
-            coords[i].x + nx / nlen * scale,
-            coords[i].y + ny / nlen * scale,
-        ));
-    }
-    // Close the ring
-    if let Some(&first) = buffered.first() {
-        buffered.push(first);
-    }
-
-    Polygon::new(Ring::new(buffered), vec![])
+    from_shapes(shapes.outline(&style))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{Coord, Polygon, Ring};
 
     #[test]
     fn test_zero_buffer() {
@@ -80,7 +95,8 @@ mod tests {
         ]);
         let poly = Polygon::new(ring.clone(), vec![]);
         let result = buffer_polygon(&poly, 0.0);
-        assert_eq!(result.exterior().coords(), ring.coords());
+        assert_eq!(result.polygons().len(), 1);
+        assert_eq!(result.polygons()[0].exterior().coords(), ring.coords());
     }
 
     #[test]
@@ -95,5 +111,19 @@ mod tests {
         let poly = Polygon::new(ring, vec![]);
         let result = buffer_polygon(&poly, 1.0);
         assert!(result.area() > poly.area());
+    }
+
+    #[test]
+    fn test_join_styles_all_produce_a_polygon() {
+        let poly = Polygon::from_coords(&[
+            Coord::new(0.0, 0.0),
+            Coord::new(4.0, 0.0),
+            Coord::new(0.0, 4.0),
+        ]);
+        for join in [JoinStyle::Round, JoinStyle::Miter, JoinStyle::Bevel] {
+            let result = buffer_polygon_with_join(&poly, 1.0, join);
+            assert_eq!(result.polygons().len(), 1, "{join:?}");
+            assert!(result.area() > poly.area(), "{join:?}");
+        }
     }
 }

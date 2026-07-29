@@ -17,7 +17,7 @@ mod predicates;
 mod rtree;
 
 pub use algorithms::{convex_hull, segment_intersection, simplify};
-pub use buffer::buffer_polygon;
+pub use buffer::{JoinStyle, buffer_polygon, buffer_polygon_with_join};
 pub use clipping::{clip_polygon, clip_polygon_rect, intersection_area, union_area};
 pub use delaunay::{Triangle, Triangulation, delaunay};
 pub use envelope::Envelope;

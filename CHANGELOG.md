@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - `polygonUnion`, `polygonIntersection`, `polygonDifference` and `polygonXor`
   WebAssembly bindings.
 - `Polygon::from_coords` and `signed_ring_area`.
+- `JoinStyle` and `buffer_polygon_with_join`, for round, miter or bevel corners.
+- `splitPolygon` WebAssembly binding.
 
 ### Changed
 
@@ -27,6 +29,16 @@ All notable changes to this project will be documented in this file.
 - The `clipToRect` WebAssembly binding returns an array of polygons and keeps
   holes, since a clip can split the input.
 - `Ring::signed_area` no longer assumes the ring repeats its first coordinate.
+- `buffer_polygon` uses the `i_overlay` outline engine instead of a vertex
+  bisector approximation. It takes any `PolygonSet` and returns a `MultiPolygon`,
+  handles concave rings and holes, and shrinks correctly for negative distances,
+  including collapsing to nothing and splitting into separate pieces. The
+  `bufferPolygon` WebAssembly binding returns an array of polygons to match.
+- `parcel::split_polygon` cuts with a polyline through the `i_overlay` slice
+  engine, replacing the two-crossing scan. It now takes `(subject, line)` and
+  returns a `MultiPolygon`, so a cut may produce more than two pieces, and it
+  handles concave rings and holes. A line that does not cross the boundary leaves
+  the subject whole instead of returning None.
 - Minimum supported Rust version is 1.88, required by `i_overlay`.
 
 ### Removed

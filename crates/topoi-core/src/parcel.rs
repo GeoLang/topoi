@@ -1,70 +1,43 @@
 //! Parcel operations: split by line, merge adjacent or overlapping polygons.
 
-use crate::geometry::{Coord, Polygon, signed_ring_area};
-use crate::overlay::union;
+use crate::geometry::{Coord, MultiPolygon, Polygon, signed_ring_area};
+use crate::overlay::{PolygonSet, from_shapes, to_shapes, union};
+use i_overlay::core::fill_rule::FillRule;
+use i_overlay::float::slice::FloatSlice;
 
-/// Split a polygon by a line defined by two points.
+/// Split a polygon set with a cutting polyline.
 ///
-/// Returns two polygons (left and right of the split line).
-/// If the line does not intersect the polygon in exactly two places,
-/// returns None.
-pub fn split_polygon(
-    polygon: &[Coord],
-    line_start: Coord,
-    line_end: Coord,
-) -> Option<(Vec<Coord>, Vec<Coord>)> {
-    if polygon.len() < 3 {
-        return None;
+/// The line is used exactly as given, so it has to cross the boundary to cut:
+/// a line that stops inside the polygon leaves it whole. Concave rings and holes
+/// are handled, and a line may cut the input into any number of pieces, so the
+/// result is a `MultiPolygon`.
+///
+/// ```
+/// use topoi_core::parcel::split_polygon;
+/// use topoi_core::{Coord, Polygon};
+///
+/// // A U opening upward, area 18
+/// let u = Polygon::from_coords(&[
+///     Coord::new(0.0, 0.0), Coord::new(6.0, 0.0), Coord::new(6.0, 4.0),
+///     Coord::new(4.0, 4.0), Coord::new(4.0, 1.0), Coord::new(2.0, 1.0),
+///     Coord::new(2.0, 4.0), Coord::new(0.0, 4.0),
+/// ]);
+///
+/// // Cutting across both arms leaves the base plus one piece per arm
+/// let pieces = split_polygon(&u, &[Coord::new(-1.0, 2.0), Coord::new(7.0, 2.0)]);
+/// assert_eq!(pieces.polygons().len(), 3);
+/// assert!((pieces.area() - 18.0).abs() < 1e-9);
+/// ```
+pub fn split_polygon<S>(subject: &S, line: &[Coord]) -> MultiPolygon
+where
+    S: PolygonSet + ?Sized,
+{
+    if line.len() < 2 {
+        return MultiPolygon::new(subject.as_polygons().to_vec());
     }
 
-    // Find intersection points of the line with polygon edges
-    let mut intersections: Vec<(usize, Coord)> = Vec::new();
-
-    let n = polygon.len();
-    for i in 0..n {
-        let a = polygon[i];
-        let b = polygon[(i + 1) % n];
-        if let Some(pt) = line_segment_intersection(line_start, line_end, a, b) {
-            intersections.push((i, pt));
-        }
-    }
-
-    if intersections.len() != 2 {
-        return None;
-    }
-
-    let (idx1, pt1) = intersections[0];
-    let (idx2, pt2) = intersections[1];
-
-    // Build two sub-polygons
-    // Polygon A: pt1 → edges from idx1+1 to idx2 → pt2 → back to pt1
-    // Polygon B: pt2 → edges from idx2+1 to idx1 → pt1 → back to pt2
-    let mut poly_a = Vec::new();
-    let mut poly_b = Vec::new();
-
-    poly_a.push(pt1);
-    let mut i = (idx1 + 1) % n;
-    loop {
-        poly_a.push(polygon[i]);
-        if i == idx2 {
-            break;
-        }
-        i = (i + 1) % n;
-    }
-    poly_a.push(pt2);
-
-    poly_b.push(pt2);
-    i = (idx2 + 1) % n;
-    loop {
-        poly_b.push(polygon[i]);
-        if i == idx1 {
-            break;
-        }
-        i = (i + 1) % n;
-    }
-    poly_b.push(pt1);
-
-    Some((poly_a, poly_b))
+    let shapes = to_shapes(subject.as_polygons());
+    from_shapes(shapes.slice_by(&line, FillRule::NonZero))
 }
 
 /// Merge two adjacent or overlapping polygons into one.
@@ -103,33 +76,6 @@ pub fn polygon_area(coords: &[Coord]) -> f64 {
     signed_ring_area(coords)
 }
 
-/// Line-segment intersection. Returns intersection point if segments cross.
-fn line_segment_intersection(p1: Coord, p2: Coord, p3: Coord, p4: Coord) -> Option<Coord> {
-    let d1x = p2.x - p1.x;
-    let d1y = p2.y - p1.y;
-    let d2x = p4.x - p3.x;
-    let d2y = p4.y - p3.y;
-
-    let denom = d1x * d2y - d1y * d2x;
-    if denom.abs() < 1e-12 {
-        return None; // parallel
-    }
-
-    let t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
-    let u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
-
-    // t can be any value (infinite line), u must be in [0,1] (segment)
-    if !(0.0..=1.0).contains(&u) {
-        return None;
-    }
-
-    // For split operations, t should also indicate the line crosses through
-    // (we allow any t since split line is infinite)
-    let _ = t;
-
-    Some(Coord::new(p3.x + u * d2x, p3.y + u * d2y))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,36 +89,34 @@ mod tests {
         ]
     }
 
+    fn halves(result: &MultiPolygon) {
+        assert_eq!(result.polygons().len(), 2);
+        for piece in result.polygons() {
+            assert!((piece.area() - 50.0).abs() < 1e-6, "got {}", piece.area());
+        }
+    }
+
     #[test]
     fn test_split_square_vertically() {
-        let sq = square();
-        let result = split_polygon(&sq, Coord::new(5.0, -1.0), Coord::new(5.0, 11.0));
-        assert!(result.is_some());
-        let (a, b) = result.unwrap();
-        let area_a = polygon_area(&a).abs();
-        let area_b = polygon_area(&b).abs();
-        assert!((area_a - 50.0).abs() < 1e-6);
-        assert!((area_b - 50.0).abs() < 1e-6);
+        let sq = Polygon::from_coords(&square());
+        let result = split_polygon(&sq, &[Coord::new(5.0, -1.0), Coord::new(5.0, 11.0)]);
+        halves(&result);
     }
 
     #[test]
     fn test_split_square_horizontally() {
-        let sq = square();
-        let result = split_polygon(&sq, Coord::new(-1.0, 5.0), Coord::new(11.0, 5.0));
-        assert!(result.is_some());
-        let (a, b) = result.unwrap();
-        let area_a = polygon_area(&a).abs();
-        let area_b = polygon_area(&b).abs();
-        assert!((area_a - 50.0).abs() < 1e-6);
-        assert!((area_b - 50.0).abs() < 1e-6);
+        let sq = Polygon::from_coords(&square());
+        let result = split_polygon(&sq, &[Coord::new(-1.0, 5.0), Coord::new(11.0, 5.0)]);
+        halves(&result);
     }
 
     #[test]
     fn test_split_no_intersection() {
-        let sq = square();
+        let sq = Polygon::from_coords(&square());
         // Line outside polygon
-        let result = split_polygon(&sq, Coord::new(20.0, 0.0), Coord::new(20.0, 10.0));
-        assert!(result.is_none());
+        let result = split_polygon(&sq, &[Coord::new(20.0, 0.0), Coord::new(20.0, 10.0)]);
+        assert_eq!(result.polygons().len(), 1);
+        assert!((result.area() - 100.0).abs() < 1e-6);
     }
 
     #[test]

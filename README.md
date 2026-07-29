@@ -12,7 +12,7 @@ Pure-Rust computational geometry engine for the GeoLang GIS stack.
 - **Geometry types** — Point, LineString, Polygon, MultiPolygon, Ring, Envelope
 - **Spatial predicates** — point-in-polygon (ray casting), envelope intersection, `contains`, `intersects`
 - **Measurements** — area, signed area, length, centroid, distance
-- **Buffering** — vertex-offset polygon buffer (convex)
+- **Buffering** — polygon offsetting with round, miter or bevel joins, positive or negative, on concave polygons and polygons with holes
 - **Convex hull** — Graham scan algorithm
 - **Delaunay triangulation** — incremental with Voronoi dual (circumcenters)
 - **Boolean operations** — general polygon overlay (union, intersection, difference, xor) on concave polygons, polygons with holes and multipolygons, via [i_overlay](https://crates.io/crates/i_overlay)
@@ -21,8 +21,8 @@ Pure-Rust computational geometry engine for the GeoLang GIS stack.
 - **Segment intersection** — exact 2D line segment intersection detection
 - **R-tree spatial index** — bulk-loaded, bounding-box queries, nearest-neighbor
 - **GeoJSON I/O** — read/write FeatureCollections
-- **Parcel operations** — subdivision and merge utilities
-- **WebAssembly SDK** — `topoi-wasm` crate exposing convex hull, buffer, clip, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`
+- **Parcel operations** — split a polygon set with a cutting polyline, merge adjacent or overlapping polygons
+- **WebAssembly SDK** — `topoi-wasm` crate exposing convex hull, buffer, clip, split, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`
 
 ## Usage
 
@@ -89,6 +89,42 @@ assert!((whole.area() - 100.0).abs() < 1e-9);
 Interior rings are treated as holes whatever winding they were given, and
 results follow the GeoJSON right-hand rule: exteriors counter-clockwise, holes
 clockwise.
+
+### Buffering and splitting
+
+`buffer_polygon` offsets a polygon set outward for a positive distance and
+inward for a negative one. `parcel::split_polygon` cuts a polygon set with a
+polyline. Both take the same operands as the boolean ops and return a
+`MultiPolygon`, because a buffer can merge or erase pieces and a cut can produce
+any number of them.
+
+```rust
+use topoi_core::{Coord, JoinStyle, Polygon, buffer_polygon, buffer_polygon_with_join};
+use topoi_core::parcel::split_polygon;
+
+let square = Polygon::from_coords(&[
+    Coord::new(0.0, 0.0), Coord::new(10.0, 0.0),
+    Coord::new(10.0, 10.0), Coord::new(0.0, 10.0),
+]);
+
+// Shrinking a convex ring adds no arcs, so this is exactly 8x8
+let inset = buffer_polygon(&square, -1.0);
+assert!((inset.area() - 64.0).abs() < 1e-9);
+
+// A negative distance past the inradius leaves nothing
+assert!(buffer_polygon(&square, -6.0).polygons().is_empty());
+
+// Sharp corners instead of arcs
+let mitred = buffer_polygon_with_join(&square, 1.0, JoinStyle::Miter);
+assert!((mitred.area() - 144.0).abs() < 1e-9);
+
+// Cut into two halves
+let halves = split_polygon(&square, &[Coord::new(-1.0, 5.0), Coord::new(11.0, 5.0)]);
+assert_eq!(halves.polygons().len(), 2);
+```
+
+The cutting line is used as given, so it has to cross the boundary to cut. A
+line that stops inside leaves the polygon whole.
 
 ## CLI
 

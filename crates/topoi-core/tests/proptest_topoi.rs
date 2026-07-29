@@ -150,6 +150,34 @@ proptest! {
         );
     }
 
+    /// Splitting only cuts, so the pieces always add back up to the subject.
+    #[test]
+    fn split_preserves_total_area(
+        (subject, subject_area) in l_shape(),
+        cut in 0.05f64..0.95,
+    ) {
+        let height = subject.exterior().coords().iter().map(|c| c.y).fold(0.0, f64::max);
+        let y = height * cut;
+        let line = [Coord::new(-10.0, y), Coord::new(1000.0, y)];
+        let pieces = parcel::split_polygon(&subject, &line);
+        prop_assert!(
+            (pieces.area() - subject_area).abs() < tolerance(subject_area),
+            "{} != {subject_area}", pieces.area()
+        );
+    }
+
+    /// Buffered area grows with the distance.
+    #[test]
+    fn buffer_area_is_monotone_in_distance(
+        (subject, _) in l_shape(),
+        near in 0.1f64..2.0,
+        extra in 0.1f64..2.0,
+    ) {
+        let small = buffer_polygon(&subject, near).area();
+        let large = buffer_polygon(&subject, near + extra).area();
+        prop_assert!(small <= large + tolerance(large), "{small} > {large}");
+    }
+
     /// Simplify preserves first and last point.
     #[test]
     fn simplify_preserves_endpoints(

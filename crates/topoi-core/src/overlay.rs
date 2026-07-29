@@ -157,7 +157,7 @@ fn overlay_rule(op: BooleanOp) -> OverlayRule {
 /// Convert topoi polygons into i_overlay shapes, forcing exteriors CCW and
 /// holes CW so the interior rings really do read as holes whatever winding the
 /// caller used.
-fn to_shapes(polygons: &[Polygon]) -> Vec<Vec<Vec<Coord>>> {
+pub(crate) fn to_shapes(polygons: &[Polygon]) -> Vec<Vec<Vec<Coord>>> {
     polygons
         .iter()
         .map(|polygon| {
@@ -187,7 +187,7 @@ fn to_contour(ring: &Ring, ccw: bool) -> Vec<Coord> {
     contour
 }
 
-fn from_shapes(shapes: Shapes<Coord>) -> MultiPolygon {
+pub(crate) fn from_shapes(shapes: Shapes<Coord>) -> MultiPolygon {
     let polygons = shapes
         .into_iter()
         .map(|shape| {

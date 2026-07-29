@@ -5,6 +5,7 @@
 //! and spatial predicates to JavaScript/TypeScript clients.
 
 use serde::{Deserialize, Serialize};
+use topoi_core::parcel::split_polygon;
 use topoi_core::{
     BooleanOp, Coord, MultiPolygon, Polygon, Ring, boolean_op, buffer_polygon, contains,
     convex_hull, delaunay, intersects, simplify,
@@ -85,9 +86,10 @@ pub fn wasm_convex_hull(points_js: JsValue) -> Result<JsValue, JsError> {
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&e.to_string()))
 }
 
-/// Buffer a polygon by a given distance.
-/// Input: JsPolygon JSON, distance float.
-/// Returns: JsPolygon JSON of the buffered polygon.
+/// Buffer a polygon by a given distance, with round joins.
+/// Input: JsPolygon JSON, distance float (negative shrinks).
+/// Returns: JSON array of JsPolygon, since growing can merge pieces and
+/// shrinking can split or erase the input.
 #[wasm_bindgen(js_name = "bufferPolygon")]
 pub fn wasm_buffer_polygon(polygon_js: JsValue, distance: f64) -> Result<JsValue, JsError> {
     let jp: JsPolygon =
@@ -95,7 +97,23 @@ pub fn wasm_buffer_polygon(polygon_js: JsValue, distance: f64) -> Result<JsValue
 
     let polygon = js_to_polygon(&jp);
     let buffered = buffer_polygon(&polygon, distance);
-    let result = polygon_to_js(&buffered);
+    let result = multipolygon_to_js(&buffered);
+
+    serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Split a polygon with a cutting polyline.
+/// Input: JsPolygon JSON, JSON array of {x, y} forming the cut line.
+/// Returns: JSON array of JsPolygon, one per resulting piece.
+#[wasm_bindgen(js_name = "splitPolygon")]
+pub fn wasm_split_polygon(polygon_js: JsValue, line_js: JsValue) -> Result<JsValue, JsError> {
+    let jp: JsPolygon =
+        serde_wasm_bindgen::from_value(polygon_js).map_err(|e| JsError::new(&e.to_string()))?;
+    let line_coords: Vec<JsCoord> =
+        serde_wasm_bindgen::from_value(line_js).map_err(|e| JsError::new(&e.to_string()))?;
+
+    let pieces = split_polygon(&js_to_polygon(&jp), &coords_to_points(&line_coords));
+    let result = multipolygon_to_js(&pieces);
 
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&e.to_string()))
 }
