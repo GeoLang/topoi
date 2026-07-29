@@ -9,20 +9,20 @@ Pure-Rust computational geometry engine for the GeoLang GIS stack.
 
 ## Features
 
-- **Geometry types** — Point, LineString, Polygon, MultiPolygon, Ring, Envelope
-- **Spatial predicates** — point-in-polygon (ray casting), envelope intersection, `contains`, `intersects`
-- **Measurements** — area, signed area, length, centroid, distance
-- **Buffering** — polygon offsetting with round, miter or bevel joins, positive or negative, on concave polygons and polygons with holes
-- **Convex hull** — Graham scan algorithm
-- **Delaunay triangulation** — incremental with Voronoi dual (circumcenters)
-- **Boolean operations** — general polygon overlay (union, intersection, difference, xor) on concave polygons, polygons with holes and multipolygons, via [i_overlay](https://crates.io/crates/i_overlay)
-- **Polygon clipping** — Sutherland-Hodgman fast path for convex clip windows, rectangle clipping
-- **Simplification** — Douglas-Peucker polyline/polygon simplification
-- **Segment intersection** — exact 2D line segment intersection detection
-- **R-tree spatial index** — bulk-loaded, bounding-box queries, nearest-neighbor
-- **GeoJSON I/O** — read/write FeatureCollections
-- **Parcel operations** — split a polygon set with a cutting polyline, merge adjacent or overlapping polygons
-- **WebAssembly SDK** — `topoi-wasm` crate exposing convex hull, buffer, clip, split, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`
+- **Geometry types**: Point, LineString, Polygon, MultiPolygon, Ring, Envelope
+- **Spatial predicates**: point-in-polygon (ray casting), envelope intersection, `contains`, `intersects`
+- **Measurements**: area, signed area, length, centroid, distance
+- **Buffering**: polygon offsetting with round, miter or bevel joins, positive or negative, on concave polygons and polygons with holes
+- **Convex hull**: Graham scan algorithm
+- **Delaunay triangulation**: incremental with Voronoi dual (circumcenters)
+- **Boolean operations**: general polygon overlay (union, intersection, difference, xor) on concave polygons, polygons with holes and multipolygons, via [i_overlay](https://crates.io/crates/i_overlay)
+- **Polygon clipping**: Sutherland-Hodgman fast path for convex clip windows, rectangle clipping
+- **Simplification**: Douglas-Peucker polyline/polygon simplification
+- **Segment intersection**: exact 2D line segment intersection detection
+- **R-tree spatial index**: bulk-loaded, bounding-box queries, nearest-neighbor
+- **GeoJSON I/O**: read/write FeatureCollections
+- **Parcel operations**: split a polygon set with a cutting polyline, merge adjacent or overlapping polygons
+- **WebAssembly SDK**: `topoi-wasm` crate exposing convex hull, buffer, clip, split, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`
 
 ## Usage
 
@@ -137,9 +137,9 @@ topoi overlay --op union --subject 0,0,2,0,2,2,0,2 --clip 1,1,3,1,3,3,1,3
 ## Architecture
 
 ```
-topoi-core    — geometry types, algorithms, predicates, R-tree
-topoi-wasm    — wasm-bindgen bindings for the browser
-topoi-cli     — command-line interface
+topoi-core:   geometry types, algorithms, predicates, R-tree
+topoi-wasm:   wasm-bindgen bindings for the browser
+topoi-cli:    command-line interface
 ```
 
 ## License
