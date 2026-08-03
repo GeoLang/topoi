@@ -89,6 +89,80 @@ pub fn intersection_area(poly_a: &[Coord], poly_b: &[Coord]) -> f64 {
     overlay::intersection(&Polygon::from_coords(poly_a), &Polygon::from_coords(poly_b)).area()
 }
 
+/// Clip a segment to a closed axis-aligned rectangle (Liang-Barsky).
+///
+/// Returns the clipped endpoints, or `None` if the segment misses the
+/// rectangle. A segment touching only the boundary is kept.
+pub fn clip_segment_rect(
+    a: Coord,
+    b: Coord,
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+) -> Option<(Coord, Coord)> {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    let mut t0 = 0.0_f64;
+    let mut t1 = 1.0_f64;
+    for (p, q) in [
+        (-dx, a.x - min_x),
+        (dx, max_x - a.x),
+        (-dy, a.y - min_y),
+        (dy, max_y - a.y),
+    ] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                if r > t1 {
+                    return None;
+                }
+                t0 = t0.max(r);
+            } else {
+                if r < t0 {
+                    return None;
+                }
+                t1 = t1.min(r);
+            }
+        }
+    }
+    Some((
+        Coord::new(a.x + t0 * dx, a.y + t0 * dy),
+        Coord::new(a.x + t1 * dx, a.y + t1 * dy),
+    ))
+}
+
+/// Clip a polyline to a closed axis-aligned rectangle.
+///
+/// Returns the parts inside the rectangle, each a polyline of at least two
+/// vertices, consecutive surviving segments joined back into one part.
+pub fn clip_linestring_rect(
+    coords: &[Coord],
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+) -> Vec<Vec<Coord>> {
+    let mut parts: Vec<Vec<Coord>> = Vec::new();
+    for pair in coords.windows(2) {
+        let Some((a, b)) = clip_segment_rect(pair[0], pair[1], min_x, min_y, max_x, max_y) else {
+            continue;
+        };
+        if a.x == b.x && a.y == b.y {
+            continue;
+        }
+        match parts.last_mut() {
+            Some(part) if part.last() == Some(&a) => part.push(b),
+            _ => parts.push(vec![a, b]),
+        }
+    }
+    parts
+}
+
 /// Determine if a point is on the "inside" (left side) of a directed edge.
 fn is_inside(point: &Coord, edge_start: &Coord, edge_end: &Coord) -> bool {
     // Cross product of edge vector and point-start vector
@@ -208,6 +282,57 @@ mod tests {
         let area = polygon_area(&result);
         // Should be less than the full triangle area (0.5)
         assert!(area > 0.0 && area < 0.5);
+    }
+
+    #[test]
+    fn test_clip_segment_rect() {
+        let clipped = clip_segment_rect(
+            Coord::new(-1.0, 0.5),
+            Coord::new(3.0, 0.5),
+            0.0,
+            0.0,
+            2.0,
+            2.0,
+        );
+        assert_eq!(clipped, Some((Coord::new(0.0, 0.5), Coord::new(2.0, 0.5))));
+        let missed = clip_segment_rect(
+            Coord::new(-1.0, 3.0),
+            Coord::new(3.0, 3.0),
+            0.0,
+            0.0,
+            2.0,
+            2.0,
+        );
+        assert_eq!(missed, None);
+    }
+
+    #[test]
+    fn test_clip_linestring_rect_multi_part() {
+        // enters, leaves, re-enters: two parts
+        let coords = vec![
+            Coord::new(-1.0, 0.5),
+            Coord::new(1.0, 0.5),
+            Coord::new(1.0, 5.0),
+            Coord::new(1.5, 5.0),
+            Coord::new(1.5, 1.0),
+        ];
+        let parts = clip_linestring_rect(&coords, 0.0, 0.0, 2.0, 2.0);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(
+            parts[0],
+            vec![
+                Coord::new(0.0, 0.5),
+                Coord::new(1.0, 0.5),
+                Coord::new(1.0, 2.0),
+            ]
+        );
+        assert_eq!(parts[1], vec![Coord::new(1.5, 2.0), Coord::new(1.5, 1.0)]);
+    }
+
+    #[test]
+    fn test_clip_linestring_rect_outside() {
+        let coords = vec![Coord::new(5.0, 5.0), Coord::new(6.0, 6.0)];
+        assert!(clip_linestring_rect(&coords, 0.0, 0.0, 2.0, 2.0).is_empty());
     }
 
     #[test]

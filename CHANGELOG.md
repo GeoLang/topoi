@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `rasterize` and `GridWindow`: burn geometry-value pairs onto a grid, NaN
+  background, last wins. Polygons fill by scanline (even-odd, holes), lines
+  burn every cell the segment intersects via grid traversal, points use
+  half-open cell membership, so tiled output matches whole-window output
+  along pixel-aligned seams.
+- `clip_segment_rect` (Liang-Barsky) and `clip_linestring_rect`, clipping
+  segments and polylines to an axis-aligned rectangle, polylines split into
+  parts where they leave the rectangle.
+
 - General polygon overlay backed by `i_overlay`: `union`, `intersection`,
   `difference`, `xor` and `boolean_op`, handling concave rings, holes,
   self-intersections and multipolygon operands. Operands are anything
