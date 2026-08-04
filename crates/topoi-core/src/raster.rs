@@ -17,7 +17,7 @@
 
 use crate::clipping::clip_segment_rect;
 use crate::geojson::FeatureGeometry;
-use crate::geometry::{Coord, Polygon};
+use crate::geometry::{Coord, LineString, Polygon};
 
 /// Output grid geometry for [`rasterize`].
 ///
@@ -37,22 +37,43 @@ pub struct GridWindow {
 pub fn rasterize(shapes: &[(FeatureGeometry, f64)], window: &GridWindow) -> Vec<f64> {
     let mut grid = vec![f64::NAN; window.width * window.height];
     for (geometry, value) in shapes {
-        match geometry {
-            FeatureGeometry::Point(p) => burn_point(&mut grid, window, &p.0, *value),
-            FeatureGeometry::LineString(l) => {
-                for pair in l.coords().windows(2) {
-                    burn_segment(&mut grid, window, pair[0], pair[1], *value);
-                }
+        burn_geometry(&mut grid, window, geometry, *value);
+    }
+    grid
+}
+
+fn burn_geometry(grid: &mut [f64], w: &GridWindow, geometry: &FeatureGeometry, value: f64) {
+    match geometry {
+        FeatureGeometry::Point(p) => burn_point(grid, w, &p.0, value),
+        FeatureGeometry::MultiPoint(mp) => {
+            for p in mp.points() {
+                burn_point(grid, w, &p.0, value);
             }
-            FeatureGeometry::Polygon(p) => fill_polygon(&mut grid, window, p, *value),
-            FeatureGeometry::MultiPolygon(mp) => {
-                for p in mp.polygons() {
-                    fill_polygon(&mut grid, window, p, *value);
-                }
+        }
+        FeatureGeometry::LineString(l) => burn_line(grid, w, l, value),
+        FeatureGeometry::MultiLineString(ml) => {
+            for l in ml.linestrings() {
+                burn_line(grid, w, l, value);
+            }
+        }
+        FeatureGeometry::Polygon(p) => fill_polygon(grid, w, p, value),
+        FeatureGeometry::MultiPolygon(mp) => {
+            for p in mp.polygons() {
+                fill_polygon(grid, w, p, value);
+            }
+        }
+        FeatureGeometry::GeometryCollection(members) => {
+            for member in members {
+                burn_geometry(grid, w, member, value);
             }
         }
     }
-    grid
+}
+
+fn burn_line(grid: &mut [f64], w: &GridWindow, line: &LineString, value: f64) {
+    for pair in line.coords().windows(2) {
+        burn_segment(grid, w, pair[0], pair[1], value);
+    }
 }
 
 fn burn_point(grid: &mut [f64], w: &GridWindow, p: &Coord, value: f64) {
@@ -151,7 +172,7 @@ fn axis_traversal(start: f64, delta: f64, origin: f64, cell: i64, cs: f64) -> (i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{LineString, MultiPolygon, Point, Ring};
+    use crate::geometry::{MultiLineString, MultiPoint, MultiPolygon, Point, Ring};
 
     fn window(
         origin_x: f64,
@@ -282,6 +303,57 @@ mod tests {
         assert!(grid.iter().all(|v| v.is_nan()));
         let grid = rasterize(&[(FeatureGeometry::Point(Point::new(0.5, 2.0)), 1.0)], &w);
         assert_eq!(burned(&grid, &w), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn test_multipoint_burns_every_point() {
+        let w = window(0.0, 0.0, 3, 3, 1.0);
+        let mp = MultiPoint::new(vec![
+            Point::new(0.5, 0.5),
+            Point::new(2.5, 2.5),
+            // outside the window, dropped like a lone point would be
+            Point::new(9.0, 9.0),
+        ]);
+        let grid = rasterize(&[(FeatureGeometry::MultiPoint(mp), 4.0)], &w);
+        assert_eq!(burned(&grid, &w), vec![(0, 0), (2, 2)]);
+        assert_eq!(grid[0], 4.0);
+    }
+
+    #[test]
+    fn test_multilinestring_burns_every_line() {
+        let w = window(0.0, 0.0, 4, 4, 1.0);
+        let mls = MultiLineString::new(vec![
+            LineString::new(vec![Coord::new(0.5, 0.5), Coord::new(3.5, 0.5)]),
+            LineString::new(vec![Coord::new(0.5, 3.5), Coord::new(3.5, 3.5)]),
+        ]);
+        let grid = rasterize(&[(FeatureGeometry::MultiLineString(mls), 6.0)], &w);
+        assert_eq!(
+            burned(&grid, &w),
+            vec![
+                (0, 0),
+                (0, 3),
+                (1, 0),
+                (1, 3),
+                (2, 0),
+                (2, 3),
+                (3, 0),
+                (3, 3)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_geometry_collection_recurses() {
+        let w = window(0.0, 0.0, 4, 2, 1.0);
+        let collection = FeatureGeometry::GeometryCollection(vec![
+            FeatureGeometry::Point(Point::new(0.5, 0.5)),
+            FeatureGeometry::GeometryCollection(vec![FeatureGeometry::Polygon(Polygon::new(
+                square(2.0, 0.0, 4.0, 1.0),
+                vec![],
+            ))]),
+        ]);
+        let grid = rasterize(&[(collection, 8.0)], &w);
+        assert_eq!(burned(&grid, &w), vec![(0, 0), (2, 0), (3, 0)]);
     }
 
     #[test]

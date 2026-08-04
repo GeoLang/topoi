@@ -84,6 +84,17 @@ fn test_linestring_length() {
 }
 
 #[test]
+fn test_multilinestring_length() {
+    let mls = MultiLineString::new(vec![
+        LineString::new(vec![Coord::new(0.0, 0.0), Coord::new(3.0, 0.0)]),
+        LineString::new(vec![Coord::new(0.0, 5.0), Coord::new(0.0, 9.0)]),
+    ]);
+    assert_eq!(mls.linestrings().len(), 2);
+    // 3 + 4 = 7
+    assert!((mls.length() - 7.0).abs() < 1e-10);
+}
+
+#[test]
 fn test_polygon_area_with_hole() {
     let ext = Ring::new(vec![
         Coord::new(0.0, 0.0),

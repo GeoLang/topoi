@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `MultiPoint` and `MultiLineString` geometry types, and the matching
+  `FeatureGeometry::MultiPoint`, `FeatureGeometry::MultiLineString` and
+  `FeatureGeometry::GeometryCollection` variants, so GeoJSON I/O covers the
+  whole RFC 7946 geometry model including nested collections.
+- `centroid` for any `FeatureGeometry`, resolved by dimension: area-weighted
+  for polygons, length-weighted for lines, mean for points, and for a mixed
+  collection only the highest dimension present counts. A member with no
+  extent at its own dimension falls to the next one down.
+- `buffer_geometry`, buffering any geometry at a caller-chosen arc resolution.
+  Points become discs, lines become round-capped capsules, polygons offset as
+  before, and collection members are unioned. A negative distance shrinks
+  polygons and leaves points and lines empty.
 - `rasterize` and `GridWindow`: burn geometry-value pairs onto a grid, NaN
   background, last wins. Polygons fill by scanline (even-odd, holes), lines
   burn every cell the segment intersects via grid traversal, points use

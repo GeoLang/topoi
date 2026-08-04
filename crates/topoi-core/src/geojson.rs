@@ -1,6 +1,8 @@
 //! GeoJSON reader/writer for Topoi geometry types.
 
-use crate::geometry::{Coord, LineString, MultiPolygon, Point, Polygon, Ring};
+use crate::geometry::{
+    Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Ring,
+};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
@@ -17,7 +19,11 @@ pub enum FeatureGeometry {
     Point(Point),
     LineString(LineString),
     Polygon(Polygon),
+    MultiPoint(MultiPoint),
+    MultiLineString(MultiLineString),
     MultiPolygon(MultiPolygon),
+    /// A heterogeneous set of geometries, which may itself contain collections.
+    GeometryCollection(Vec<FeatureGeometry>),
 }
 
 /// A GeoJSON FeatureCollection.
@@ -107,10 +113,29 @@ fn geometry_to_value(geom: &FeatureGeometry) -> Value {
             obj.insert("type".into(), Value::String("Polygon".into()));
             obj.insert("coordinates".into(), polygon_coords_to_value(poly));
         }
+        FeatureGeometry::MultiPoint(mp) => {
+            obj.insert("type".into(), Value::String("MultiPoint".into()));
+            let coords: Vec<Value> = mp.points().iter().map(|p| coord_to_value(&p.0)).collect();
+            obj.insert("coordinates".into(), Value::Array(coords));
+        }
+        FeatureGeometry::MultiLineString(mls) => {
+            obj.insert("type".into(), Value::String("MultiLineString".into()));
+            let lines: Vec<Value> = mls
+                .linestrings()
+                .iter()
+                .map(|ls| Value::Array(ls.coords().iter().map(coord_to_value).collect()))
+                .collect();
+            obj.insert("coordinates".into(), Value::Array(lines));
+        }
         FeatureGeometry::MultiPolygon(mp) => {
             obj.insert("type".into(), Value::String("MultiPolygon".into()));
             let polys: Vec<Value> = mp.polygons().iter().map(polygon_coords_to_value).collect();
             obj.insert("coordinates".into(), Value::Array(polys));
+        }
+        FeatureGeometry::GeometryCollection(members) => {
+            obj.insert("type".into(), Value::String("GeometryCollection".into()));
+            let geoms: Vec<Value> = members.iter().map(geometry_to_value).collect();
+            obj.insert("geometries".into(), Value::Array(geoms));
         }
     }
     Value::Object(obj)
@@ -185,6 +210,28 @@ fn parse_geometry(value: &Value) -> Result<FeatureGeometry, crate::Error> {
             let poly = parse_polygon_rings(rings)?;
             Ok(FeatureGeometry::Polygon(poly))
         }
+        "MultiPoint" => {
+            let coords = parse_coord_array(
+                value
+                    .get("coordinates")
+                    .ok_or_else(|| crate::Error::ParseError("missing coordinates".into()))?,
+            )?;
+            let points = coords.into_iter().map(Point).collect();
+            Ok(FeatureGeometry::MultiPoint(MultiPoint::new(points)))
+        }
+        "MultiLineString" => {
+            let lines_val = value
+                .get("coordinates")
+                .and_then(|c| c.as_array())
+                .ok_or_else(|| crate::Error::ParseError("missing coordinates".into()))?;
+            let mut linestrings = Vec::new();
+            for lv in lines_val {
+                linestrings.push(LineString::new(parse_coord_array(lv)?));
+            }
+            Ok(FeatureGeometry::MultiLineString(MultiLineString::new(
+                linestrings,
+            )))
+        }
         "MultiPolygon" => {
             let polys_val = value
                 .get("coordinates")
@@ -198,6 +245,17 @@ fn parse_geometry(value: &Value) -> Result<FeatureGeometry, crate::Error> {
                 polygons.push(parse_polygon_rings(rings)?);
             }
             Ok(FeatureGeometry::MultiPolygon(MultiPolygon::new(polygons)))
+        }
+        "GeometryCollection" => {
+            let members = value
+                .get("geometries")
+                .and_then(|g| g.as_array())
+                .ok_or_else(|| crate::Error::ParseError("missing geometries array".into()))?;
+            let geometries = members
+                .iter()
+                .map(parse_geometry)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(FeatureGeometry::GeometryCollection(geometries))
         }
         _ => Err(crate::Error::ParseError(format!(
             "unsupported geometry type: {geom_type}"
@@ -250,7 +308,13 @@ fn parse_coord(arr: &[Value]) -> Result<Coord, crate::Error> {
 fn is_geometry_type(t: &str) -> bool {
     matches!(
         t,
-        "Point" | "LineString" | "Polygon" | "MultiPolygon" | "MultiPoint" | "MultiLineString"
+        "Point"
+            | "LineString"
+            | "Polygon"
+            | "MultiPolygon"
+            | "MultiPoint"
+            | "MultiLineString"
+            | "GeometryCollection"
     )
 }
 
@@ -326,6 +390,116 @@ mod tests {
                 assert_eq!(p.0.y, 20.0);
             }
             _ => panic!("expected point"),
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_multipoint() {
+        let fc = FeatureCollection {
+            features: vec![Feature {
+                geometry: Some(FeatureGeometry::MultiPoint(MultiPoint::new(vec![
+                    Point::new(1.0, 2.0),
+                    Point::new(3.0, 4.0),
+                ]))),
+                properties: HashMap::new(),
+            }],
+        };
+
+        let parsed = read_geojson(&write_geojson(&fc)).unwrap();
+        match &parsed.features[0].geometry {
+            Some(FeatureGeometry::MultiPoint(mp)) => {
+                assert_eq!(mp.points().len(), 2);
+                assert_eq!(mp.points()[1].0, Coord::new(3.0, 4.0));
+            }
+            other => panic!("expected multipoint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_multilinestring() {
+        let fc = FeatureCollection {
+            features: vec![Feature {
+                geometry: Some(FeatureGeometry::MultiLineString(MultiLineString::new(
+                    vec![
+                        LineString::new(vec![Coord::new(0.0, 0.0), Coord::new(1.0, 1.0)]),
+                        LineString::new(vec![
+                            Coord::new(5.0, 5.0),
+                            Coord::new(6.0, 5.0),
+                            Coord::new(7.0, 8.0),
+                        ]),
+                    ],
+                ))),
+                properties: HashMap::new(),
+            }],
+        };
+
+        let parsed = read_geojson(&write_geojson(&fc)).unwrap();
+        match &parsed.features[0].geometry {
+            Some(FeatureGeometry::MultiLineString(mls)) => {
+                assert_eq!(mls.linestrings().len(), 2);
+                assert_eq!(mls.linestrings()[1].coords().len(), 3);
+                assert_eq!(mls.linestrings()[1].coords()[2], Coord::new(7.0, 8.0));
+            }
+            other => panic!("expected multilinestring, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_nested_geometry_collection() {
+        let inner = FeatureGeometry::GeometryCollection(vec![
+            FeatureGeometry::Point(Point::new(9.0, 9.0)),
+            FeatureGeometry::Polygon(Polygon::from_coords(&[
+                Coord::new(0.0, 0.0),
+                Coord::new(2.0, 0.0),
+                Coord::new(2.0, 2.0),
+            ])),
+        ]);
+        let fc = FeatureCollection {
+            features: vec![Feature {
+                geometry: Some(FeatureGeometry::GeometryCollection(vec![
+                    FeatureGeometry::LineString(LineString::new(vec![
+                        Coord::new(0.0, 0.0),
+                        Coord::new(1.0, 0.0),
+                    ])),
+                    inner,
+                ])),
+                properties: HashMap::new(),
+            }],
+        };
+
+        let json = write_geojson(&fc);
+        assert!(json.contains("\"geometries\""));
+        let parsed = read_geojson(&json).unwrap();
+        match &parsed.features[0].geometry {
+            Some(FeatureGeometry::GeometryCollection(members)) => {
+                assert_eq!(members.len(), 2);
+                assert!(matches!(members[0], FeatureGeometry::LineString(_)));
+                match &members[1] {
+                    FeatureGeometry::GeometryCollection(nested) => {
+                        assert_eq!(nested.len(), 2);
+                        assert!(matches!(nested[0], FeatureGeometry::Point(_)));
+                        assert!(matches!(nested[1], FeatureGeometry::Polygon(_)));
+                    }
+                    other => panic!("expected nested collection, got {other:?}"),
+                }
+            }
+            other => panic!("expected geometry collection, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_read_bare_geometry_collection() {
+        let json = r#"{
+            "type": "GeometryCollection",
+            "geometries": [
+                {"type": "Point", "coordinates": [1, 2]},
+                {"type": "MultiPoint", "coordinates": [[3, 4], [5, 6]]}
+            ]
+        }"#;
+        let fc = read_geojson(json).unwrap();
+        match &fc.features[0].geometry {
+            Some(FeatureGeometry::GeometryCollection(members)) => assert_eq!(members.len(), 2),
+            other => panic!("expected geometry collection, got {other:?}"),
         }
     }
 

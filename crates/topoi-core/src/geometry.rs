@@ -159,6 +159,42 @@ impl Polygon {
     }
 }
 
+/// A collection of points.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiPoint {
+    points: Vec<Point>,
+}
+
+impl MultiPoint {
+    pub fn new(points: Vec<Point>) -> Self {
+        Self { points }
+    }
+
+    pub fn points(&self) -> &[Point] {
+        &self.points
+    }
+}
+
+/// A collection of line strings.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiLineString {
+    linestrings: Vec<LineString>,
+}
+
+impl MultiLineString {
+    pub fn new(linestrings: Vec<LineString>) -> Self {
+        Self { linestrings }
+    }
+
+    pub fn linestrings(&self) -> &[LineString] {
+        &self.linestrings
+    }
+
+    pub fn length(&self) -> f64 {
+        self.linestrings.iter().map(|l| l.length()).sum()
+    }
+}
+
 /// A collection of polygons.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MultiPolygon {
