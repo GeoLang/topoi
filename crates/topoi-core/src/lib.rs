@@ -22,8 +22,8 @@ pub use algorithms::{convex_hull, segment_intersection, simplify};
 pub use buffer::{JoinStyle, buffer_geometry, buffer_polygon, buffer_polygon_with_join};
 pub use centroid::centroid;
 pub use clipping::{
-    clip_linestring_rect, clip_polygon, clip_polygon_rect, clip_segment_rect, intersection_area,
-    union_area,
+    clip_linestring_rect, clip_polygon, clip_polygon_rect, clip_segment_rect, clip_to_boundary,
+    intersection_area, union_area,
 };
 pub use delaunay::{Triangle, Triangulation, delaunay};
 pub use envelope::Envelope;

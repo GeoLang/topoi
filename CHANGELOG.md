@@ -26,6 +26,11 @@ All notable changes to this project will be documented in this file.
 - `clip_segment_rect` (Liang-Barsky) and `clip_linestring_rect`, clipping
   segments and polylines to an axis-aligned rectangle, polylines split into
   parts where they leave the rectangle.
+- `clip_to_boundary`, clipping any `FeatureGeometry` to a `MultiPolygon`
+  boundary: polygons through the overlay engine, shaped back to a `Polygon`
+  or a `MultiPolygon`, lines cut at their crossings with the boundary rings
+  and kept where the midpoint is inside, points by containment, collections
+  member by member. Vertices the boundary does not touch stay bit-exact.
 
 - General polygon overlay backed by `i_overlay`: `union`, `intersection`,
   `difference`, `xor` and `boolean_op`, handling concave rings, holes,
