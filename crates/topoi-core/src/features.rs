@@ -11,11 +11,12 @@ use crate::Error;
 use crate::algorithms::{convex_hull, simplify};
 use crate::buffer::buffer_geometry;
 use crate::centroid::centroid;
-use crate::clipping::{clip_linestring_rect, clip_polygon_rect, clip_to_boundary};
+use crate::clipping::{clip_linestring_rect, clip_to_boundary};
 use crate::envelope::Envelope;
 use crate::geojson::{Feature, FeatureCollection, FeatureGeometry};
 use crate::geometry::{
-    Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Ring, closed_ring,
+    Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Ring,
+    closed_polygon,
 };
 use crate::grid::{hex_grid, square_grid};
 use crate::overlay::{difference, intersection, union};
@@ -425,8 +426,8 @@ fn simplify_ring(ring: &Ring, tolerance: f64) -> Option<Ring> {
 
 /// Clip every geometry to an axis-aligned rectangle, keeping properties.
 ///
-/// Polygon rings are clipped one at a time, so a hole crossing the rectangle
-/// edge comes back cut to the same rectangle.
+/// Areal geometry goes through the overlay engine, so holes survive as holes and
+/// a concave shape the rectangle cuts in two comes back as separate pieces.
 pub fn fc_clip_rect(
     fc: &FeatureCollection,
     min_x: f64,
@@ -435,18 +436,28 @@ pub fn fc_clip_rect(
     max_y: f64,
 ) -> FeatureCollection {
     let rect = Envelope::new(min_x, min_y, max_x, max_y);
+    let boundary = MultiPolygon::new(vec![closed_polygon(vec![
+        Coord::new(rect.min_x, rect.min_y),
+        Coord::new(rect.max_x, rect.min_y),
+        Coord::new(rect.max_x, rect.max_y),
+        Coord::new(rect.min_x, rect.max_y),
+    ])]);
     let features = fc
         .features
         .iter()
         .filter_map(|f| {
             let g = f.geometry.as_ref()?;
-            clip_geometry(g, &rect).map(|geom| feature(geom, f.properties.clone()))
+            clip_geometry(g, &rect, &boundary).map(|geom| feature(geom, f.properties.clone()))
         })
         .collect();
     FeatureCollection { features }
 }
 
-fn clip_geometry(geometry: &FeatureGeometry, rect: &Envelope) -> Option<FeatureGeometry> {
+fn clip_geometry(
+    geometry: &FeatureGeometry,
+    rect: &Envelope,
+    boundary: &MultiPolygon,
+) -> Option<FeatureGeometry> {
     let clip_line = |coords: &[Coord]| {
         clip_linestring_rect(coords, rect.min_x, rect.min_y, rect.max_x, rect.max_y)
     };
@@ -468,40 +479,17 @@ fn clip_geometry(geometry: &FeatureGeometry, rect: &Envelope) -> Option<FeatureG
                 .flat_map(|l| clip_line(l.coords()))
                 .collect(),
         ),
-        FeatureGeometry::Polygon(p) => clip_polygon_to_rect(p, rect).map(FeatureGeometry::Polygon),
-        FeatureGeometry::MultiPolygon(mp) => {
-            let polygons: Vec<Polygon> = mp
-                .polygons()
-                .iter()
-                .filter_map(|p| clip_polygon_to_rect(p, rect))
-                .collect();
-            (!polygons.is_empty())
-                .then(|| FeatureGeometry::MultiPolygon(MultiPolygon::new(polygons)))
+        FeatureGeometry::Polygon(_) | FeatureGeometry::MultiPolygon(_) => {
+            clip_to_boundary(geometry, boundary)
         }
         FeatureGeometry::GeometryCollection(members) => {
             let kept: Vec<FeatureGeometry> = members
                 .iter()
-                .filter_map(|m| clip_geometry(m, rect))
+                .filter_map(|m| clip_geometry(m, rect, boundary))
                 .collect();
             (!kept.is_empty()).then_some(FeatureGeometry::GeometryCollection(kept))
         }
     }
-}
-
-fn clip_polygon_to_rect(polygon: &Polygon, rect: &Envelope) -> Option<Polygon> {
-    let clip_ring = |ring: &Ring| {
-        let coords = clip_polygon_rect(
-            ring.coords(),
-            rect.min_x,
-            rect.min_y,
-            rect.max_x,
-            rect.max_y,
-        );
-        (coords.len() >= 3).then(|| closed_ring(coords))
-    };
-    let exterior = clip_ring(polygon.exterior())?;
-    let interiors = polygon.interiors().iter().filter_map(clip_ring).collect();
-    Some(Polygon::new(exterior, interiors))
 }
 
 fn lines(parts: Vec<Vec<Coord>>) -> Option<FeatureGeometry> {

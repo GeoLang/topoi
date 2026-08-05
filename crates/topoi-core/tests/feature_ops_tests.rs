@@ -408,6 +408,58 @@ fn test_fc_clip_rect_by_type() {
     assert_eq!(prop(&out.features[2], "id"), &Value::from(3));
 }
 
+#[test]
+fn test_fc_clip_rect_splits_a_concave_polygon() {
+    // a U opening upwards: arms at x 0..2 and x 4..6, base below y 2
+    let u = Polygon::new(
+        ring(&[
+            (0.0, 0.0),
+            (6.0, 0.0),
+            (6.0, 6.0),
+            (4.0, 6.0),
+            (4.0, 2.0),
+            (2.0, 2.0),
+            (2.0, 6.0),
+            (0.0, 6.0),
+        ]),
+        vec![],
+    );
+    assert!((u.area() - 28.0).abs() < EPS);
+
+    let input = fc(vec![polygon_feature(u, &[("id", Value::from(1))])]);
+    // cutting above the base leaves the two arms with nothing joining them
+    let out = fc_clip_rect(&input, 0.0, 3.0, 6.0, 7.0);
+    assert_eq!(out.features.len(), 1);
+    assert_eq!(prop(&out.features[0], "id"), &Value::from(1));
+    match out.features[0].geometry.as_ref().unwrap() {
+        FeatureGeometry::MultiPolygon(mp) => {
+            assert_eq!(mp.polygons().len(), 2);
+            assert!((mp.area() - 12.0).abs() < EPS, "area {}", mp.area());
+            for arm in mp.polygons() {
+                assert!((arm.area() - 6.0).abs() < EPS, "arm area {}", arm.area());
+            }
+        }
+        other => panic!("expected two separate arms, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_fc_clip_rect_keeps_holes() {
+    let holed = Polygon::new(
+        ring(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]),
+        vec![ring(&[(3.0, 3.0), (6.0, 3.0), (6.0, 6.0), (3.0, 6.0)])],
+    );
+    let input = fc(vec![polygon_feature(holed, &[("id", Value::from(1))])]);
+    let out = fc_clip_rect(&input, 0.0, 0.0, 8.0, 8.0);
+    match out.features[0].geometry.as_ref().unwrap() {
+        FeatureGeometry::Polygon(p) => {
+            assert_eq!(p.interiors().len(), 1);
+            assert!((p.area() - (64.0 - 9.0)).abs() < EPS, "area {}", p.area());
+        }
+        other => panic!("expected a polygon with a hole, got {other:?}"),
+    }
+}
+
 // --- voronoi, grid ---
 
 #[test]
