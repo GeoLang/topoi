@@ -42,6 +42,23 @@ pub fn signed_ring_area(coords: &[Coord]) -> f64 {
     area / 2.0
 }
 
+/// A ring closed by repeating its first coordinate, when it does not already.
+pub(crate) fn closed_ring(mut coords: Vec<Coord>) -> Ring {
+    if coords.len() >= 2 && coords.first() != coords.last() {
+        coords.push(coords[0]);
+    }
+    Ring::new(coords)
+}
+
+/// A polygon from an open coordinate loop. Fewer than three coordinates give a
+/// polygon with an empty ring.
+pub(crate) fn closed_polygon(coords: Vec<Coord>) -> Polygon {
+    if coords.len() < 3 {
+        return Polygon::new(Ring::new(Vec::new()), vec![]);
+    }
+    Polygon::new(closed_ring(coords), vec![])
+}
+
 /// A linear ring (closed sequence of coordinates).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ring {

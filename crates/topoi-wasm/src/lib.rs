@@ -5,10 +5,13 @@
 //! and spatial predicates to JavaScript/TypeScript clients.
 
 use serde::{Deserialize, Serialize};
+use topoi_core::geojson::{read_geojson, write_geojson};
 use topoi_core::parcel::split_polygon;
 use topoi_core::{
-    BooleanOp, Coord, MultiPolygon, Polygon, Ring, boolean_op, buffer_polygon, contains,
-    convex_hull, delaunay, intersects, simplify,
+    BooleanOp, Coord, Envelope, GridKind, JoinPredicate, MultiPolygon, OverlayKind, Polygon, Ring,
+    boolean_op, buffer_polygon, contains, convex_hull, delaunay, fc_buffer, fc_centroid,
+    fc_clip_rect, fc_convex_hull, fc_dissolve, fc_grid, fc_make_valid, fc_overlay, fc_simplify,
+    fc_spatial_join, fc_validate, fc_voronoi, intersects, simplify,
 };
 use wasm_bindgen::prelude::*;
 
@@ -298,6 +301,168 @@ pub fn wasm_bounding_box(points_js: JsValue) -> Result<JsValue, JsError> {
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&e.to_string()))
 }
 
+// --- FeatureCollection ops, GeoJSON strings in and out ---
+
+fn js(e: impl std::fmt::Display) -> JsError {
+    JsError::new(&e.to_string())
+}
+
+fn overlay_kind(name: &str) -> Result<OverlayKind, String> {
+    match name {
+        "intersection" => Ok(OverlayKind::Intersection),
+        "difference" => Ok(OverlayKind::Difference),
+        "clip" => Ok(OverlayKind::Clip),
+        other => Err(format!(
+            "unknown overlay op {other:?}, expected intersection, difference or clip"
+        )),
+    }
+}
+
+fn join_predicate(name: &str) -> Result<JoinPredicate, String> {
+    match name {
+        "intersects" => Ok(JoinPredicate::Intersects),
+        "within" => Ok(JoinPredicate::Within),
+        "nearest" => Ok(JoinPredicate::Nearest),
+        other => Err(format!(
+            "unknown join predicate {other:?}, expected intersects, within or nearest"
+        )),
+    }
+}
+
+fn grid_kind(name: &str) -> Result<GridKind, String> {
+    match name {
+        "square" => Ok(GridKind::Square),
+        "hex" => Ok(GridKind::Hex),
+        other => Err(format!(
+            "unknown grid kind {other:?}, expected square or hex"
+        )),
+    }
+}
+
+/// Buffer every feature of a GeoJSON FeatureCollection, keeping properties.
+#[wasm_bindgen(js_name = "fcBuffer")]
+pub fn wasm_fc_buffer(fc_json: &str, distance: f64, segments: usize) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    Ok(write_geojson(&fc_buffer(&fc, distance, segments)))
+}
+
+/// Union the polygon features, grouped by the `by` property when given.
+#[wasm_bindgen(js_name = "fcDissolve")]
+pub fn wasm_fc_dissolve(fc_json: &str, by: Option<String>) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    let dissolved = fc_dissolve(&fc, by.as_deref()).map_err(js)?;
+    Ok(write_geojson(&dissolved))
+}
+
+/// Overlay two collections. `op` is "intersection", "difference" or "clip".
+#[wasm_bindgen(js_name = "fcOverlay")]
+pub fn wasm_fc_overlay(a_json: &str, b_json: &str, op: &str) -> Result<String, JsError> {
+    let a = read_geojson(a_json).map_err(js)?;
+    let b = read_geojson(b_json).map_err(js)?;
+    let out = fc_overlay(&a, &b, overlay_kind(op).map_err(js)?).map_err(js)?;
+    Ok(write_geojson(&out))
+}
+
+/// Join source properties onto target features. `predicate` is "intersects",
+/// "within" or "nearest".
+#[wasm_bindgen(js_name = "fcSpatialJoin")]
+pub fn wasm_fc_spatial_join(
+    target_json: &str,
+    source_json: &str,
+    predicate: &str,
+    prefix: &str,
+) -> Result<String, JsError> {
+    let target = read_geojson(target_json).map_err(js)?;
+    let source = read_geojson(source_json).map_err(js)?;
+    let out = fc_spatial_join(
+        &target,
+        &source,
+        join_predicate(predicate).map_err(js)?,
+        prefix,
+    )
+    .map_err(js)?;
+    Ok(write_geojson(&out))
+}
+
+/// One convex hull over every coordinate in the collection.
+#[wasm_bindgen(js_name = "fcConvexHull")]
+pub fn wasm_fc_convex_hull(fc_json: &str) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    Ok(write_geojson(&fc_convex_hull(&fc)))
+}
+
+/// Replace every geometry with its centroid.
+#[wasm_bindgen(js_name = "fcCentroid")]
+pub fn wasm_fc_centroid(fc_json: &str) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    Ok(write_geojson(&fc_centroid(&fc)))
+}
+
+/// Douglas-Peucker every linestring and polygon ring.
+#[wasm_bindgen(js_name = "fcSimplify")]
+pub fn wasm_fc_simplify(fc_json: &str, tolerance: f64) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    Ok(write_geojson(&fc_simplify(&fc, tolerance)))
+}
+
+/// Clip every geometry to an axis-aligned rectangle.
+#[wasm_bindgen(js_name = "fcClipRect")]
+pub fn wasm_fc_clip_rect(
+    fc_json: &str,
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    Ok(write_geojson(&fc_clip_rect(
+        &fc, min_x, min_y, max_x, max_y,
+    )))
+}
+
+/// Voronoi cells over the point features, clipped to the given rectangle.
+#[wasm_bindgen(js_name = "fcVoronoi")]
+pub fn wasm_fc_voronoi(
+    fc_json: &str,
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    let envelope = Envelope::new(min_x, min_y, max_x, max_y);
+    Ok(write_geojson(&fc_voronoi(&fc, &envelope).map_err(js)?))
+}
+
+/// A grid covering a rectangle. `kind` is "square" or "hex".
+#[wasm_bindgen(js_name = "fcGrid")]
+pub fn wasm_fc_grid(
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+    cell_size: f64,
+    kind: &str,
+) -> Result<String, JsError> {
+    let envelope = Envelope::new(min_x, min_y, max_x, max_y);
+    let grid = fc_grid(&envelope, cell_size, grid_kind(kind).map_err(js)?).map_err(js)?;
+    Ok(write_geojson(&grid))
+}
+
+/// Validity issues per feature, as a JSON report rather than a collection.
+#[wasm_bindgen(js_name = "fcValidate")]
+pub fn wasm_fc_validate(fc_json: &str) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    serde_json::to_string(&fc_validate(&fc)).map_err(js)
+}
+
+/// Repair every feature, keeping properties.
+#[wasm_bindgen(js_name = "fcMakeValid")]
+pub fn wasm_fc_make_valid(fc_json: &str) -> Result<String, JsError> {
+    let fc = read_geojson(fc_json).map_err(js)?;
+    Ok(write_geojson(&fc_make_valid(&fc).map_err(js)?))
+}
+
 // Native tests (not wasm_bindgen_test, since those require wasm32 target)
 #[cfg(test)]
 mod tests {
@@ -388,6 +553,40 @@ mod tests {
         let js = multipolygon_to_js(&result);
         assert_eq!(js.len(), 1);
         assert_eq!(js[0].holes.len(), 1);
+    }
+
+    // only the happy path: building a JsError needs the wasm target
+    #[test]
+    fn test_fc_binding_round_trips_geojson_strings() {
+        let json = r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"zone":"a"},
+             "geometry":{"type":"Polygon","coordinates":[[[0,0],[4,0],[4,4],[0,4],[0,0]]]}}]}"#;
+        let out = wasm_fc_centroid(json).unwrap();
+        assert!(out.contains("\"Point\""), "{out}");
+        assert!(out.contains("[2.0,2.0]"), "{out}");
+        assert!(out.contains("\"zone\":\"a\""), "{out}");
+
+        let report = wasm_fc_validate(json).unwrap();
+        assert_eq!(report, r#"{"valid":true,"invalid":[]}"#);
+    }
+
+    #[test]
+    fn test_enum_names_parse() {
+        assert_eq!(overlay_kind("clip").unwrap(), OverlayKind::Clip);
+        assert_eq!(join_predicate("nearest").unwrap(), JoinPredicate::Nearest);
+        assert_eq!(grid_kind("hex").unwrap(), GridKind::Hex);
+    }
+
+    #[test]
+    fn test_unknown_enum_names_say_what_was_expected() {
+        let err = overlay_kind("Union").unwrap_err();
+        assert!(err.contains("\"Union\""), "{err}");
+        assert!(err.contains("intersection"), "{err}");
+        assert!(join_predicate("touches").is_err());
+        assert!(
+            grid_kind("triangle").unwrap_err().contains("square"),
+            "{err}"
+        );
     }
 
     #[test]

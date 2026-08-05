@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- 2026-08-05: `voronoi_polygons`, cells clipped to an envelope and index-aligned
+  with the input sites, built by half-plane clipping so collinear, duplicate and
+  outside-the-envelope sites all work.
+- 2026-08-05: `square_grid` and `hex_grid` (pointy-top, `cell_size` is the
+  circumradius), covering an envelope completely and refusing a cell size that
+  would ask for over a million cells.
+- 2026-08-05: `validate` and `make_valid` with a serializable `ValidityIssue`:
+  too few points, repeated vertices, ring self-intersection and holes reaching
+  outside their shell. Repair puts polygons through a self-overlay, which splits
+  a bowtie into a multipolygon and normalizes winding.
+- 2026-08-05: FeatureCollection level ops, all keeping properties: `fc_buffer`,
+  `fc_dissolve`, `fc_overlay` (intersection, difference, clip), `fc_spatial_join`
+  (intersects, within, nearest), `fc_convex_hull`, `fc_centroid`, `fc_simplify`,
+  `fc_clip_rect`, `fc_voronoi`, `fc_grid`, `fc_validate` and `fc_make_valid`.
+  Errors name the feature index and the reason.
+- 2026-08-05: GeoJSON-string WebAssembly bindings for every FeatureCollection op
+  (`fcBuffer`, `fcDissolve`, `fcOverlay`, ...), taking and returning whole
+  collections as strings, with enum arguments as lowercase names.
 - `MultiPoint` and `MultiLineString` geometry types, and the matching
   `FeatureGeometry::MultiPoint`, `FeatureGeometry::MultiLineString` and
   `FeatureGeometry::GeometryCollection` variants, so GeoJSON I/O covers the
