@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-08-15: docs drop "∞ precision". The fourth stat is the test count.
+
 ### Added
 
 - 2026-08-05: `voronoi_polygons`, cells clipped to an envelope and index-aligned
