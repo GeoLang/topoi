@@ -252,6 +252,77 @@ fn test_intersects_separate() {
     assert!(!intersects(&a, &b));
 }
 
+#[test]
+fn test_intersects_disjoint_overlapping_envelopes() {
+    let a = Polygon::new(
+        Ring::new(vec![
+            Coord::new(0.0, 1.0),
+            Coord::new(1.0, 0.0),
+            Coord::new(2.0, 1.0),
+            Coord::new(1.0, 2.0),
+            Coord::new(0.0, 1.0),
+        ]),
+        vec![],
+    );
+    let b = Polygon::new(
+        Ring::new(vec![
+            Coord::new(1.5, 2.0),
+            Coord::new(2.5, 1.0),
+            Coord::new(3.5, 2.0),
+            Coord::new(2.5, 3.0),
+            Coord::new(1.5, 2.0),
+        ]),
+        vec![],
+    );
+    assert!(!intersects(&a, &b));
+}
+
+#[test]
+fn test_intersects_nested() {
+    let a = square_polygon();
+    let b = Polygon::new(
+        Ring::new(vec![
+            Coord::new(1.0, 1.0),
+            Coord::new(2.0, 1.0),
+            Coord::new(2.0, 2.0),
+            Coord::new(1.0, 2.0),
+            Coord::new(1.0, 1.0),
+        ]),
+        vec![],
+    );
+    assert!(intersects(&a, &b));
+}
+
+#[test]
+fn test_intersects_inside_hole() {
+    let ext = Ring::new(vec![
+        Coord::new(0.0, 0.0),
+        Coord::new(10.0, 0.0),
+        Coord::new(10.0, 10.0),
+        Coord::new(0.0, 10.0),
+        Coord::new(0.0, 0.0),
+    ]);
+    let hole = Ring::new(vec![
+        Coord::new(3.0, 3.0),
+        Coord::new(7.0, 3.0),
+        Coord::new(7.0, 7.0),
+        Coord::new(3.0, 7.0),
+        Coord::new(3.0, 3.0),
+    ]);
+    let a = Polygon::new(ext, vec![hole]);
+    let b = Polygon::new(
+        Ring::new(vec![
+            Coord::new(4.0, 4.0),
+            Coord::new(6.0, 4.0),
+            Coord::new(6.0, 6.0),
+            Coord::new(4.0, 6.0),
+            Coord::new(4.0, 4.0),
+        ]),
+        vec![],
+    );
+    assert!(!intersects(&a, &b));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Algorithms
 // ═══════════════════════════════════════════════════════════════════════════
@@ -316,6 +387,41 @@ fn test_segment_intersection_non_crossing() {
         Coord::new(3.0, 0.0),
     );
     assert!(result.is_none());
+}
+
+#[test]
+fn test_segment_intersection_small_right_angle() {
+    let result = segment_intersection(
+        Coord::new(0.0, 5e-8),
+        Coord::new(1e-7, 5e-8),
+        Coord::new(5e-8, 0.0),
+        Coord::new(5e-8, 1e-7),
+    );
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_segment_intersection_collinear_overlap() {
+    let result = segment_intersection(
+        Coord::new(0.0, 0.0),
+        Coord::new(2.0, 0.0),
+        Coord::new(1.0, 0.0),
+        Coord::new(3.0, 0.0),
+    );
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_segment_intersection_shared_endpoint() {
+    let result = segment_intersection(
+        Coord::new(0.0, 0.0),
+        Coord::new(1.0, 0.0),
+        Coord::new(1.0, 0.0),
+        Coord::new(1.0, 1.0),
+    );
+    let p = result.unwrap();
+    assert!((p.x - 1.0).abs() < 1e-10);
+    assert!(p.y.abs() < 1e-10);
 }
 
 #[test]

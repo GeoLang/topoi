@@ -65,8 +65,9 @@ pub fn segment_intersection(p1: Coord, p2: Coord, p3: Coord, p4: Coord) -> Optio
     let d2y = p4.y - p3.y;
 
     let denom = d1x * d2y - d1y * d2x;
-    if denom.abs() < 1e-12 {
-        return None; // Parallel or collinear
+    let scale = (d1x.abs() + d1y.abs()) * (d2x.abs() + d2y.abs());
+    if denom.abs() <= 1e-12 * scale {
+        return collinear_overlap(p1, p2, p3, p4);
     }
 
     let t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
@@ -77,6 +78,32 @@ pub fn segment_intersection(p1: Coord, p2: Coord, p3: Coord, p4: Coord) -> Optio
     } else {
         None
     }
+}
+
+fn collinear_overlap(p1: Coord, p2: Coord, p3: Coord, p4: Coord) -> Option<Coord> {
+    let area = cross(&p1, &p2, &p3);
+    let scale =
+        ((p2.x - p1.x).abs() + (p2.y - p1.y).abs()) * ((p3.x - p1.x).abs() + (p3.y - p1.y).abs());
+    if area.abs() > 1e-12 * scale {
+        return None;
+    }
+    if on_segment(p1, p2, p3) {
+        return Some(p3);
+    }
+    if on_segment(p1, p2, p4) {
+        return Some(p4);
+    }
+    if on_segment(p3, p4, p1) {
+        return Some(p1);
+    }
+    if on_segment(p3, p4, p2) {
+        return Some(p2);
+    }
+    None
+}
+
+fn on_segment(a: Coord, b: Coord, p: Coord) -> bool {
+    p.x >= a.x.min(b.x) && p.x <= a.x.max(b.x) && p.y >= a.y.min(b.y) && p.y <= a.y.max(b.y)
 }
 
 /// Simplify a linestring using the Douglas-Peucker algorithm.
@@ -166,6 +193,47 @@ mod tests {
             Coord::new(1.0, 1.0),
         );
         assert!(p.is_none());
+    }
+
+    #[test]
+    fn test_segment_intersection_small_right_angle() {
+        let p = segment_intersection(
+            Coord::new(0.0, 5e-8),
+            Coord::new(1e-7, 5e-8),
+            Coord::new(5e-8, 0.0),
+            Coord::new(5e-8, 1e-7),
+        );
+        assert!(p.is_some());
+        let pt = p.unwrap();
+        assert!((pt.x - 5e-8).abs() < 1e-16);
+        assert!((pt.y - 5e-8).abs() < 1e-16);
+    }
+
+    #[test]
+    fn test_segment_intersection_collinear_overlap() {
+        let p = segment_intersection(
+            Coord::new(0.0, 0.0),
+            Coord::new(2.0, 0.0),
+            Coord::new(1.0, 0.0),
+            Coord::new(3.0, 0.0),
+        );
+        assert!(p.is_some());
+        let pt = p.unwrap();
+        assert!(pt.y.abs() < 1e-10);
+        assert!(pt.x >= 1.0 - 1e-10 && pt.x <= 2.0 + 1e-10);
+    }
+
+    #[test]
+    fn test_segment_intersection_shared_endpoint() {
+        let p = segment_intersection(
+            Coord::new(0.0, 0.0),
+            Coord::new(1.0, 0.0),
+            Coord::new(1.0, 0.0),
+            Coord::new(1.0, 1.0),
+        );
+        let pt = p.unwrap();
+        assert!((pt.x - 1.0).abs() < 1e-10);
+        assert!(pt.y.abs() < 1e-10);
     }
 
     #[test]
