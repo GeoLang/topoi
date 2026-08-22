@@ -65,7 +65,9 @@ impl From<Op> for BooleanOp {
 
 fn parse_ring(values: &[f64]) -> Ring {
     let coords: Vec<Coord> = values
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| Coord::new(c[0], c[1]))
         .collect();
     Ring::new(coords)

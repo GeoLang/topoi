@@ -94,7 +94,7 @@ fn fill_polygon(grid: &mut [f64], w: &GridWindow, poly: &Polygon, value: f64) {
             ring_crossings(hole.coords(), y, &mut crossings);
         }
         crossings.sort_by(|a, b| a.total_cmp(b));
-        for pair in crossings.chunks_exact(2) {
+        for pair in crossings.as_chunks::<2>().0 {
             let start = ((pair[0] - w.origin_x) / w.cell_size - 0.5).ceil() as i64;
             let end = ((pair[1] - w.origin_x) / w.cell_size - 0.5).ceil() as i64;
             for col in start.max(0)..end.min(w.width as i64) {
