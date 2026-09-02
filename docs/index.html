@@ -54,10 +54,10 @@ footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color
 <a href="./api/" class="secondary">API docs</a>
 </div>
 <div class="stats">
-<div class="stat"><div class="num">6</div><div class="label">Geometry types</div></div>
+<div class="stat"><div class="num">9</div><div class="label">Geometry types</div></div>
 <div class="stat"><div class="num">5</div><div class="label">Predicates</div></div>
 <div class="stat"><div class="num">0</div><div class="label">C dependencies</div></div>
-<div class="stat"><div class="num">246</div><div class="label">Rust tests</div></div>
+<div class="stat"><div class="num">264</div><div class="label">Rust tests</div></div>
 </div>
 </div>
 </header>
@@ -73,6 +73,7 @@ footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color
 <li>LineString (open polyline)</li>
 <li>Ring (closed, oriented)</li>
 <li>Polygon (exterior + holes)</li>
+<li>MultiPoint, MultiLineString</li>
 <li>MultiPolygon (collection)</li>
 <li>Envelope (AABB)</li>
 </ul>
@@ -81,9 +82,9 @@ footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color
 <h3>🔍 Spatial Predicates</h3>
 <ul>
 <li>Point-in-polygon (ray casting)</li>
-<li>Polygon-polygon envelope intersection</li>
+<li>Polygon intersection by ring crossings and vertex containment</li>
 <li>Contains with hole exclusion</li>
-<li>Envelope containment</li>
+<li>Envelope intersection and containment</li>
 <li>Ring winding detection (CCW/CW)</li>
 </ul>
 </div>
@@ -100,10 +101,33 @@ footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color
 <div class="card">
 <h3>🛡️ Operations</h3>
 <ul>
-<li>Polygon buffering (vertex offset)</li>
-<li>Envelope union &amp; intersection test</li>
-<li>Ring closure validation</li>
-<li>Convex polygon support</li>
+<li>Boolean overlay: union, intersection, difference, xor</li>
+<li>Buffering any geometry, round, miter or bevel joins</li>
+<li>Splitting a polygon set with a cutting polyline</li>
+<li>Clipping to a rectangle or a polygon boundary</li>
+<li>Douglas-Peucker simplification</li>
+<li>Validity checks and repair</li>
+</ul>
+</div>
+<div class="card">
+<h3>🕸️ Construction</h3>
+<ul>
+<li>Delaunay triangulation with Voronoi circumcenters</li>
+<li>Voronoi cells clipped to an envelope</li>
+<li>Square and hexagonal grids</li>
+<li>Convex hull (Graham scan)</li>
+<li>R-tree index, box queries and nearest-neighbor</li>
+<li>Rasterizing geometry onto a grid window</li>
+</ul>
+</div>
+<div class="card">
+<h3>🌐 GeoJSON and JavaScript</h3>
+<ul>
+<li>Read and write the full RFC 7946 geometry model</li>
+<li>Collection-level buffer, dissolve, overlay and spatial join</li>
+<li>Voronoi, grid, clip, centroid, hull and simplify per collection</li>
+<li>Feature properties carried through every op</li>
+<li>WebAssembly bindings for geometry and collection calls</li>
 </ul>
 </div>
 </div>

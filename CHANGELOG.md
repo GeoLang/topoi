@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-08-21: `intersects` on polygons tests ring edge crossings and vertex
+  containment instead of the two envelopes. `segment_intersection` uses a
+  relative tolerance and reports collinear overlaps.
+
 ### Changed
 
 - 2026-08-15: docs drop "∞ precision". The fourth stat is the test count.

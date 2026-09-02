@@ -10,21 +10,28 @@ Pure-Rust computational geometry engine for the GeoLang GIS stack.
 ## Features
 
 - **Geometry types**: Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon, Ring, Envelope
-- **Spatial predicates**: point-in-polygon (ray casting), envelope intersection, `contains`, `intersects`
+- **Spatial predicates**: point-in-polygon (ray casting), `contains` with holes excluded, `intersects` for two polygons by ring crossings and vertex containment, envelope intersection and containment
 - **Measurements**: area, signed area, length, distance, and `centroid` for any geometry, resolved by dimension (areal beats linear beats puntal)
 - **Buffering**: `buffer_geometry` for any geometry, points into discs and lines into round-capped capsules, and polygon offsetting with round, miter or bevel joins, positive or negative, on concave polygons and polygons with holes
 - **Convex hull**: Graham scan algorithm
 - **Delaunay triangulation**: incremental with Voronoi dual (circumcenters)
+- **Voronoi cells**: `voronoi_polygons` builds cells clipped to an envelope by half-plane clipping, index-aligned with the input sites
+- **Grids**: `square_grid` and `hex_grid` (pointy-top, `cell_size` is the circumradius) cover an envelope completely and refuse a cell size that would ask for over a million cells
 - **Boolean operations**: general polygon overlay (union, intersection, difference, xor) on concave polygons, polygons with holes and multipolygons, via [i_overlay](https://crates.io/crates/i_overlay)
-- **Polygon clipping**: Sutherland-Hodgman fast path for convex clip windows, rectangle clipping
+- **Clipping**: Sutherland-Hodgman fast path for convex clip windows, rectangle clipping, Liang-Barsky segment and polyline clipping, and `clip_to_boundary` for any geometry against a `MultiPolygon`
 - **Simplification**: Douglas-Peucker polyline/polygon simplification
-- **Segment intersection**: exact 2D line segment intersection detection
+- **Segment intersection**: 2D segment intersection point, collinear overlaps included
+- **Validity**: `validate` reports too few points, repeated vertices, ring self-intersection and holes reaching outside their shell. `make_valid` repairs a geometry through a self-overlay, which splits a bowtie into a multipolygon and normalizes winding
+- **Rasterization**: `rasterize` burns geometry-value pairs onto a `GridWindow`, polygons by scanline, lines by grid traversal, points by half-open cell membership, so tiled output matches whole-window output along pixel-aligned seams
 - **R-tree spatial index**: bulk-loaded, bounding-box queries, nearest-neighbor
 - **GeoJSON I/O**: read/write FeatureCollections over the full RFC 7946 geometry model, nested GeometryCollections included
+- **FeatureCollection operations**: `fc_buffer`, `fc_dissolve`, `fc_overlay` (intersection, difference, clip), `fc_spatial_join` (intersects, within, nearest), `fc_convex_hull`, `fc_centroid`, `fc_simplify`, `fc_clip_rect`, `fc_voronoi`, `fc_grid`, `fc_validate` and `fc_make_valid`, all keeping feature properties
 - **Parcel operations**: split a polygon set with a cutting polyline, merge adjacent or overlapping polygons
-- **WebAssembly SDK**: `topoi-wasm` crate exposing convex hull, buffer, clip, split, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`
+- **WebAssembly SDK**: `topoi-wasm` crate exposing convex hull, buffer, clip, split, Delaunay, simplify, point-in-polygon, boolean overlay, and bounding box to JavaScript via `wasm-bindgen`, plus a GeoJSON-string binding for every FeatureCollection op (`fcBuffer`, `fcDissolve`, `fcOverlay` and the rest), taking and returning whole collections as strings
 
 ## Usage
+
+Requires Rust 1.88 or newer, the minimum for the `i_overlay` 7.0 dependency.
 
 ```rust
 use topoi_core::{Coord, Polygon, Ring, contains, convex_hull, delaunay, simplify};

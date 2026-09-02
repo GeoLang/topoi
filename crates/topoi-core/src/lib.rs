@@ -1,7 +1,7 @@
 //! Topoi — Pure-Rust computational geometry engine.
 //!
 //! Boolean operations, buffering, Voronoi diagrams, Delaunay triangulation,
-//! and topological predicates (DE-9IM) for 2D geometries.
+//! and the `contains` and `intersects` predicates for 2D geometries.
 
 mod algorithms;
 mod buffer;
