@@ -54,8 +54,8 @@ let points = vec![
 ];
 let hull = convex_hull(&points);
 
-// Delaunay triangulation
-let tri = delaunay(&points);
+// Delaunay triangulation, None under three points
+let tri = delaunay(&points).unwrap();
 let voronoi = tri.voronoi_vertices();
 
 // Simplification

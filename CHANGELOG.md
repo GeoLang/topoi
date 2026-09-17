@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-09-16: docs match the code. The README's usage block unwraps `delaunay`,
+  which returns an `Option` and made the snippet fail to compile. The docs page
+  carries the CI badge instead of a hardcoded green one.
+
 ### Fixed
 
 - 2026-08-21: `intersects` on polygons tests ring edge crossings and vertex
