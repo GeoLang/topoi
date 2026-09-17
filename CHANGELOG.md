@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- 2026-09-16: `topoi contains --help` says the polygon comes from `--ring`. It
+  never read stdin.
 - 2026-09-16: docs match the code. The README's usage block unwraps `delaunay`,
   which returns an `Option` and made the snippet fail to compile. The docs page
   carries the CI badge instead of a hardcoded green one.

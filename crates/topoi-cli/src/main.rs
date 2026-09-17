@@ -12,7 +12,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Test if a point is inside a polygon (reads WKT-like coords from stdin)
+    /// Test if a point is inside a polygon given as --ring
     Contains {
         /// Point X coordinate
         #[arg(long)]
