@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- 2026-10-28: `read_wkb` and `read_geopackage_geometry` decode WKB and
+  GeoPackage geometry blobs into `FeatureGeometry`, which now implements
+  `PartialEq`. Only XY ordinates are read.
+
 ### Changed
 
 - 2026-09-16: `topoi contains --help` says the polygon comes from `--ring`. It

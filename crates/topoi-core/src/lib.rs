@@ -21,6 +21,7 @@ mod raster;
 mod rtree;
 mod validity;
 mod voronoi;
+mod wkb;
 
 pub use algorithms::{convex_hull, segment_intersection, simplify};
 pub use buffer::{JoinStyle, buffer_geometry, buffer_polygon, buffer_polygon_with_join};
@@ -48,3 +49,4 @@ pub use raster::{GridWindow, rasterize};
 pub use rtree::RTree;
 pub use validity::{ValidityIssue, ValidityKind, make_valid, validate};
 pub use voronoi::voronoi_polygons;
+pub use wkb::{read_geopackage_geometry, read_wkb};

@@ -14,7 +14,7 @@ pub struct Feature {
 }
 
 /// Geometry types representable in GeoJSON.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FeatureGeometry {
     Point(Point),
     LineString(LineString),
