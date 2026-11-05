@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- 2026-11-04: CI and the release workflow call the reusable workflows in
+  `GeoLang/.github`. The `topoi-<target>.tar.gz` archives are unchanged.
 - 2026-09-16: `topoi contains --help` says the polygon comes from `--ring`. It
   never read stdin.
 - 2026-09-16: docs match the code. The README's usage block unwraps `delaunay`,
