@@ -6,9 +6,11 @@
 //! polygon into several pieces or punch holes into it.
 
 use crate::geometry::{Coord, MultiPolygon, Polygon, Ring, signed_ring_area};
+use crate::predicates::point_in_ring;
 use i_overlay::core::fill_rule::FillRule;
 use i_overlay::core::overlay_rule::OverlayRule;
-use i_overlay::float::single::SingleFloatOverlay;
+use i_overlay::core::solver::Solver;
+use i_overlay::float::overlay::{FloatOverlay, OverlayOptions};
 use i_overlay::i_float::float::compatible::FloatPointCompatible;
 use i_overlay::i_shape::base::data::Shapes;
 
@@ -105,7 +107,14 @@ where
     let clip = to_shapes(clip.as_polygons());
     // NonZero is correct because to_shapes normalizes exteriors to CCW and
     // holes to CW, so winding alone decides what is solid.
-    let shapes = subj.overlay(&clip, overlay_rule(op), FillRule::NonZero);
+    // i_overlay's default output lets a ring touch itself where two holes or a hole and its shell meet at one point
+    let shapes = FloatOverlay::<Coord, i64>::from_subj_and_clip_custom(
+        &subj,
+        &clip,
+        OverlayOptions::ogc(),
+        Solver::default(),
+    )
+    .overlay(overlay_rule(op), FillRule::NonZero);
     from_shapes(shapes)
 }
 
@@ -187,14 +196,54 @@ fn to_contour(ring: &Ring, ccw: bool) -> Vec<Coord> {
     contour
 }
 
+fn interior_point(ring: &Ring) -> Coord {
+    let coords = ring.coords();
+    let mut heights: Vec<f64> = coords.iter().map(|c| c.y).collect();
+    heights.sort_by(f64::total_cmp);
+    heights.dedup();
+    let y = (heights[0] + heights[1]) / 2.0;
+    let mut crossings: Vec<f64> = coords
+        .windows(2)
+        .filter(|edge| (edge[0].y > y) != (edge[1].y > y))
+        .map(|edge| edge[0].x + (y - edge[0].y) * (edge[1].x - edge[0].x) / (edge[1].y - edge[0].y))
+        .collect();
+    crossings.sort_by(f64::total_cmp);
+    Coord::new((crossings[0] + crossings[1]) / 2.0, y)
+}
+
+fn encloses(exterior: &Ring, hole: &Ring) -> bool {
+    signed_ring_area(exterior.coords()).abs() > signed_ring_area(hole.coords()).abs()
+        && point_in_ring(exterior, &interior_point(hole))
+}
+
 pub(crate) fn from_shapes(shapes: Shapes<Coord>) -> MultiPolygon {
-    let polygons = shapes
+    let mut exteriors = Vec::with_capacity(shapes.len());
+    let mut interiors: Vec<Vec<Ring>> = Vec::with_capacity(shapes.len());
+    let mut misplaced = Vec::new();
+    for shape in shapes {
+        let mut rings = shape.into_iter().map(to_ring);
+        let exterior = rings.next().unwrap_or_else(|| Ring::new(Vec::new()));
+        let (inside, outside): (Vec<Ring>, Vec<Ring>) =
+            rings.partition(|hole| encloses(&exterior, hole));
+        misplaced.extend(outside);
+        exteriors.push(exterior);
+        interiors.push(inside);
+    }
+    // TODO: drop once iShape-Rust/iOverlay#104 is fixed, ogc output can attach a hole to an island inside a sibling hole
+    for hole in misplaced {
+        let owner = (0..exteriors.len())
+            .filter(|&i| encloses(&exteriors[i], &hole))
+            .min_by(|&a, &b| {
+                let area = |i: usize| signed_ring_area(exteriors[i].coords()).abs();
+                area(a).total_cmp(&area(b))
+            })
+            .expect("i_overlay returns every hole inside some exterior");
+        interiors[owner].push(hole);
+    }
+    let polygons = exteriors
         .into_iter()
-        .map(|shape| {
-            let mut rings = shape.into_iter().map(to_ring);
-            let exterior = rings.next().unwrap_or_else(|| Ring::new(Vec::new()));
-            Polygon::new(exterior, rings.collect())
-        })
+        .zip(interiors)
+        .map(|(exterior, holes)| Polygon::new(exterior, holes))
         .collect();
     MultiPolygon::new(polygons)
 }
@@ -271,5 +320,44 @@ mod tests {
         let result = intersection(&square(0.0, 2.0), &square(1.0, 3.0));
         assert_eq!(result.polygons().len(), 1);
         assert!((result.area() - 1.0).abs() < 1e-9, "got {}", result.area());
+    }
+
+    fn ring(points: &[(f64, f64)]) -> Ring {
+        let mut coords: Vec<Coord> = points.iter().map(|&(x, y)| Coord::new(x, y)).collect();
+        coords.push(coords[0]);
+        Ring::new(coords)
+    }
+
+    #[test]
+    fn a_hole_stays_with_its_shell_when_a_sibling_hole_touches_the_shell_around_an_island() {
+        let shell = ring(&[(42.0, 45.0), (2.0, 40.0), (46.0, 1.0), (87.0, 1.0)]);
+        let touching_hole = ring(&[(29.0, 23.0), (42.0, 45.0), (41.0, 33.0), (56.0, 9.0)]);
+        let small_hole = ring(&[(42.0, 32.0), (42.0, 33.0), (43.0, 33.0), (43.0, 32.0)]);
+        let island = ring(&[
+            (40.0, 20.0),
+            (40.0, 19.0),
+            (41.0, 19.0),
+            (41.0, 18.0),
+            (42.0, 18.0),
+            (42.0, 17.0),
+            (45.0, 17.0),
+            (45.0, 18.0),
+            (43.0, 18.0),
+            (43.0, 20.0),
+        ]);
+        let polygons = vec![
+            Polygon::new(shell, vec![touching_hole, small_hole]),
+            Polygon::new(island, vec![]),
+        ];
+
+        let result = union(&polygons, &[] as &[Polygon]);
+
+        let mut holes: Vec<usize> = result
+            .polygons()
+            .iter()
+            .map(|p| p.interiors().len())
+            .collect();
+        holes.sort();
+        assert_eq!(holes, vec![0, 2]);
     }
 }

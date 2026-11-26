@@ -88,7 +88,7 @@ fn open_coords(ring: &Ring) -> &[Coord] {
 }
 
 /// Ray casting algorithm for point-in-ring.
-fn point_in_ring(ring: &Ring, point: &Coord) -> bool {
+pub(crate) fn point_in_ring(ring: &Ring, point: &Coord) -> bool {
     let coords = ring.coords();
     let n = coords.len();
     if n < 3 {
