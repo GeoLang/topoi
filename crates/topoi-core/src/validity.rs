@@ -97,9 +97,21 @@ fn check_line(coords: &[Coord], issues: &mut Vec<ValidityIssue>) {
 fn check_polygon(polygon: &Polygon, issues: &mut Vec<ValidityIssue>) {
     check_ring(polygon.exterior(), "exterior ring", issues);
     let shell = Polygon::new(polygon.exterior().clone(), vec![]);
+    // ogc lets holes touch the shell, and ray casting gives either answer for a point on it
+    let on_shell = |c: &Coord| {
+        polygon
+            .exterior()
+            .coords()
+            .windows(2)
+            .any(|edge| segment_intersection(edge[0], edge[1], *c, *c).is_some())
+    };
     for (i, hole) in polygon.interiors().iter().enumerate() {
         check_ring(hole, &format!("hole {i}"), issues);
-        if hole.coords().iter().any(|c| !contains(&shell, c)) {
+        if hole
+            .coords()
+            .iter()
+            .any(|c| !contains(&shell, c) && !on_shell(c))
+        {
             issues.push(ValidityIssue::new(
                 ValidityKind::HoleOutsideShell,
                 format!("hole {i} reaches outside the exterior ring"),
@@ -299,6 +311,22 @@ mod tests {
                 .any(|i| i.kind == ValidityKind::HoleOutsideShell),
             "{issues:?}"
         );
+    }
+
+    #[test]
+    fn a_hole_touching_the_shell_at_a_point_is_valid() {
+        // ray casting puts (10, 5) outside the square, it lies on the right edge
+        let holed = FeatureGeometry::Polygon(Polygon::new(
+            ring(&[
+                (0.0, 0.0),
+                (10.0, 0.0),
+                (10.0, 10.0),
+                (0.0, 10.0),
+                (0.0, 0.0),
+            ]),
+            vec![ring(&[(6.0, 4.0), (10.0, 5.0), (6.0, 6.0), (6.0, 4.0)])],
+        ));
+        assert!(validate(&holed).is_empty(), "{:?}", validate(&holed));
     }
 
     #[test]

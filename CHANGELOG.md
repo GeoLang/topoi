@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- 2026-11-27: `validate` no longer reports `HoleOutsideShell` for a hole whose vertex lies on the exterior ring, which OGC allows. Ray casting put such a vertex on either side depending on the edge, so 38 holes of a valid WorldCover class 60 union were flagged where GEOS finds none.
 - 2026-08-21: `intersects` on polygons tests ring edge crossings and vertex
   containment instead of the two envelopes. `segment_intersection` uses a
   relative tolerance and reports collinear overlaps.
