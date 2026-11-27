@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- 2026-11-27: `write_wkb` and `write_geopackage_geometry` encode a
+  `FeatureGeometry` as little endian XY WKB, and as a GeoPackage blob with an
+  XY envelope, or the empty flag and no envelope when it has no coordinates.
 - 2026-10-28: `read_wkb` and `read_geopackage_geometry` decode WKB and
   GeoPackage geometry blobs into `FeatureGeometry`, which now implements
   `PartialEq`. Only XY ordinates are read.

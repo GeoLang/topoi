@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::features::geometry_envelope;
 use crate::geojson::FeatureGeometry;
 use crate::geometry::{
     Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Ring,
@@ -6,6 +7,111 @@ use crate::geometry::{
 
 pub fn read_wkb(bytes: &[u8]) -> Result<FeatureGeometry, Error> {
     Wkb::new(bytes).geometry()
+}
+
+pub fn write_wkb(geometry: &FeatureGeometry) -> Vec<u8> {
+    let mut out = Vec::new();
+    push_geometry(geometry, &mut out);
+    out
+}
+
+pub fn write_geopackage_geometry(geometry: &FeatureGeometry, srs_id: i32) -> Vec<u8> {
+    let envelope = geometry_envelope(geometry);
+    // flag bit 0 marks a little endian header, bits 1-3 value 1 an xy envelope, bit 4 an empty geometry
+    let flags = match envelope {
+        Some(_) => 0b0000_0011,
+        None => 0b0001_0001,
+    };
+    let mut out = vec![b'G', b'P', 0, flags];
+    out.extend_from_slice(&srs_id.to_le_bytes());
+    if let Some(envelope) = envelope {
+        // geopackage envelopes run min x, max x, min y, max y
+        for bound in [
+            envelope.min_x,
+            envelope.max_x,
+            envelope.min_y,
+            envelope.max_y,
+        ] {
+            out.extend_from_slice(&bound.to_le_bytes());
+        }
+    }
+    push_geometry(geometry, &mut out);
+    out
+}
+
+fn push_header(kind: u32, out: &mut Vec<u8>) {
+    out.push(1);
+    out.extend_from_slice(&kind.to_le_bytes());
+}
+
+fn push_count(count: usize, out: &mut Vec<u8>) {
+    let count = u32::try_from(count).expect("wkb counts fit in 32 bits");
+    out.extend_from_slice(&count.to_le_bytes());
+}
+
+fn push_coord(coord: Coord, out: &mut Vec<u8>) {
+    out.extend_from_slice(&coord.x.to_le_bytes());
+    out.extend_from_slice(&coord.y.to_le_bytes());
+}
+
+fn push_coords(coords: &[Coord], out: &mut Vec<u8>) {
+    push_count(coords.len(), out);
+    for coord in coords {
+        push_coord(*coord, out);
+    }
+}
+
+fn push_polygon(polygon: &Polygon, out: &mut Vec<u8>) {
+    push_header(3, out);
+    push_count(1 + polygon.interiors().len(), out);
+    push_coords(polygon.exterior().coords(), out);
+    for hole in polygon.interiors() {
+        push_coords(hole.coords(), out);
+    }
+}
+
+fn push_geometry(geometry: &FeatureGeometry, out: &mut Vec<u8>) {
+    match geometry {
+        FeatureGeometry::Point(point) => {
+            push_header(1, out);
+            push_coord(point.0, out);
+        }
+        FeatureGeometry::LineString(line) => {
+            push_header(2, out);
+            push_coords(line.coords(), out);
+        }
+        FeatureGeometry::Polygon(polygon) => push_polygon(polygon, out),
+        FeatureGeometry::MultiPoint(points) => {
+            push_header(4, out);
+            push_count(points.points().len(), out);
+            for point in points.points() {
+                push_header(1, out);
+                push_coord(point.0, out);
+            }
+        }
+        FeatureGeometry::MultiLineString(lines) => {
+            push_header(5, out);
+            push_count(lines.linestrings().len(), out);
+            for line in lines.linestrings() {
+                push_header(2, out);
+                push_coords(line.coords(), out);
+            }
+        }
+        FeatureGeometry::MultiPolygon(polygons) => {
+            push_header(6, out);
+            push_count(polygons.polygons().len(), out);
+            for polygon in polygons.polygons() {
+                push_polygon(polygon, out);
+            }
+        }
+        FeatureGeometry::GeometryCollection(members) => {
+            push_header(7, out);
+            push_count(members.len(), out);
+            for member in members {
+                push_geometry(member, out);
+            }
+        }
+    }
 }
 
 pub fn read_geopackage_geometry(bytes: &[u8]) -> Result<FeatureGeometry, Error> {
@@ -180,108 +286,6 @@ fn member_error(collection: &str, member: &str) -> Error {
 mod tests {
     use super::*;
 
-    struct Writer {
-        out: Vec<u8>,
-        little_endian: bool,
-    }
-
-    impl Writer {
-        fn new(little_endian: bool) -> Self {
-            Self {
-                out: Vec::new(),
-                little_endian,
-            }
-        }
-
-        fn count(&mut self, n: usize) {
-            let n = n as u32;
-            let bytes = if self.little_endian {
-                n.to_le_bytes()
-            } else {
-                n.to_be_bytes()
-            };
-            self.out.extend_from_slice(&bytes);
-        }
-
-        fn number(&mut self, v: f64) {
-            let bytes = if self.little_endian {
-                v.to_le_bytes()
-            } else {
-                v.to_be_bytes()
-            };
-            self.out.extend_from_slice(&bytes);
-        }
-
-        fn coords(&mut self, coords: &[Coord]) {
-            self.count(coords.len());
-            for c in coords {
-                self.number(c.x);
-                self.number(c.y);
-            }
-        }
-
-        fn header(&mut self, kind: usize) {
-            self.out.push(u8::from(self.little_endian));
-            self.count(kind);
-        }
-
-        fn geometry(&mut self, geometry: &FeatureGeometry) {
-            match geometry {
-                FeatureGeometry::Point(p) => {
-                    self.header(1);
-                    self.number(p.0.x);
-                    self.number(p.0.y);
-                }
-                FeatureGeometry::LineString(l) => {
-                    self.header(2);
-                    self.coords(l.coords());
-                }
-                FeatureGeometry::Polygon(p) => {
-                    self.header(3);
-                    self.count(1 + p.interiors().len());
-                    self.coords(p.exterior().coords());
-                    for hole in p.interiors() {
-                        self.coords(hole.coords());
-                    }
-                }
-                FeatureGeometry::MultiPoint(mp) => {
-                    self.header(4);
-                    self.count(mp.points().len());
-                    for p in mp.points() {
-                        self.geometry(&FeatureGeometry::Point(*p));
-                    }
-                }
-                FeatureGeometry::MultiLineString(mls) => {
-                    self.header(5);
-                    self.count(mls.linestrings().len());
-                    for l in mls.linestrings() {
-                        self.geometry(&FeatureGeometry::LineString(l.clone()));
-                    }
-                }
-                FeatureGeometry::MultiPolygon(mp) => {
-                    self.header(6);
-                    self.count(mp.polygons().len());
-                    for p in mp.polygons() {
-                        self.geometry(&FeatureGeometry::Polygon(p.clone()));
-                    }
-                }
-                FeatureGeometry::GeometryCollection(members) => {
-                    self.header(7);
-                    self.count(members.len());
-                    for m in members {
-                        self.geometry(m);
-                    }
-                }
-            }
-        }
-    }
-
-    fn wkb(geometry: &FeatureGeometry, little_endian: bool) -> Vec<u8> {
-        let mut writer = Writer::new(little_endian);
-        writer.geometry(geometry);
-        writer.out
-    }
-
     fn coords(pairs: &[(f64, f64)]) -> Vec<Coord> {
         pairs.iter().map(|&(x, y)| Coord::new(x, y)).collect()
     }
@@ -300,71 +304,112 @@ mod tests {
         LineString::new(coords(&[(0.0, 0.0), (1.5, -2.0), (3.0, 4.25)]))
     }
 
-    fn every_type() -> Vec<FeatureGeometry> {
-        let holed = Polygon::new(
+    fn holed() -> Polygon {
+        Polygon::new(
             Ring::new(square(0.0, 0.0, 10.0).exterior().coords().to_vec()),
-            vec![Ring::new(
-                square(2.0, 2.0, 3.0).exterior().coords().to_vec(),
-            )],
-        );
+            vec![
+                Ring::new(square(2.0, 2.0, 3.0).exterior().coords().to_vec()),
+                Ring::new(square(6.0, 6.0, 1.0).exterior().coords().to_vec()),
+            ],
+        )
+    }
+
+    // each geometry beside the wkb type code the ogc spec gives it
+    fn every_type() -> Vec<(FeatureGeometry, u32)> {
         vec![
-            FeatureGeometry::Point(Point::new(1.25, -7.5)),
-            FeatureGeometry::LineString(line()),
-            FeatureGeometry::Polygon(holed.clone()),
-            FeatureGeometry::MultiPoint(MultiPoint::new(vec![
-                Point::new(0.0, 1.0),
-                Point::new(2.0, 3.0),
-            ])),
-            FeatureGeometry::MultiLineString(MultiLineString::new(vec![
-                line(),
-                LineString::new(coords(&[(9.0, 9.0), (8.0, 7.0)])),
-            ])),
-            FeatureGeometry::MultiPolygon(MultiPolygon::new(vec![holed, square(20.0, 0.0, 1.0)])),
-            FeatureGeometry::GeometryCollection(vec![
-                FeatureGeometry::Point(Point::new(5.0, 5.0)),
-                FeatureGeometry::GeometryCollection(vec![FeatureGeometry::LineString(line())]),
-            ]),
+            (FeatureGeometry::Point(Point::new(1.25, -7.5)), 1),
+            (FeatureGeometry::LineString(line()), 2),
+            (FeatureGeometry::Polygon(holed()), 3),
+            (
+                FeatureGeometry::MultiPoint(MultiPoint::new(vec![
+                    Point::new(0.0, 1.0),
+                    Point::new(2.0, 3.0),
+                ])),
+                4,
+            ),
+            (
+                FeatureGeometry::MultiLineString(MultiLineString::new(vec![
+                    line(),
+                    LineString::new(coords(&[(9.0, 9.0), (8.0, 7.0)])),
+                ])),
+                5,
+            ),
+            (
+                FeatureGeometry::MultiPolygon(MultiPolygon::new(vec![
+                    holed(),
+                    square(20.0, 0.0, 1.0),
+                ])),
+                6,
+            ),
+            (
+                FeatureGeometry::GeometryCollection(vec![
+                    FeatureGeometry::Point(Point::new(5.0, 5.0)),
+                    FeatureGeometry::GeometryCollection(vec![FeatureGeometry::LineString(line())]),
+                ]),
+                7,
+            ),
         ]
     }
 
-    fn gp_blob(envelope_type: u8, wkb: &[u8]) -> Vec<u8> {
-        let envelope_size = [0, 32, 48, 48, 64][envelope_type as usize];
-        let mut out = vec![b'G', b'P', 0, (envelope_type << 1) | 1];
-        out.extend_from_slice(&4326i32.to_le_bytes());
-        out.extend(std::iter::repeat_n(0xAB, envelope_size));
-        out.extend_from_slice(wkb);
+    fn big_endian_line(line: &LineString) -> Vec<u8> {
+        let mut out = vec![0];
+        out.extend_from_slice(&2u32.to_be_bytes());
+        out.extend_from_slice(&(line.coords().len() as u32).to_be_bytes());
+        for c in line.coords() {
+            out.extend_from_slice(&c.x.to_be_bytes());
+            out.extend_from_slice(&c.y.to_be_bytes());
+        }
+        out
+    }
+
+    fn little_endian_header(kind: u32, count: Option<u32>) -> Vec<u8> {
+        let mut out = vec![1];
+        out.extend_from_slice(&kind.to_le_bytes());
+        if let Some(count) = count {
+            out.extend_from_slice(&count.to_le_bytes());
+        }
         out
     }
 
     #[test]
-    fn every_type_round_trips_in_both_byte_orders() {
-        for geometry in every_type() {
-            for little_endian in [true, false] {
-                let decoded = read_wkb(&wkb(&geometry, little_endian)).unwrap();
-                assert_eq!(decoded, geometry, "little endian {little_endian}");
-            }
+    fn every_type_round_trips_through_write_wkb() {
+        for (geometry, _) in every_type() {
+            assert_eq!(read_wkb(&write_wkb(&geometry)).unwrap(), geometry);
         }
     }
 
     #[test]
-    fn nested_geometries_carry_their_own_byte_order() {
-        let point = FeatureGeometry::Point(Point::new(3.0, 4.0));
-        let mut bytes = Writer::new(true);
-        bytes.header(7);
-        bytes.count(2);
-        bytes.out.extend(wkb(&point, false));
-        bytes.out.extend(wkb(&point, true));
-        let decoded = read_wkb(&bytes.out).unwrap();
+    fn write_wkb_writes_little_endian_ogc_type_codes() {
+        for (geometry, kind) in every_type() {
+            let bytes = write_wkb(&geometry);
+            assert_eq!(bytes[0], 1, "{geometry:?}");
+            assert_eq!(bytes[1..5], kind.to_le_bytes(), "{geometry:?}");
+        }
+        let mut point = little_endian_header(1, None);
+        point.extend_from_slice(&1.25f64.to_le_bytes());
+        point.extend_from_slice(&(-7.5f64).to_le_bytes());
         assert_eq!(
-            decoded,
-            FeatureGeometry::GeometryCollection(vec![point.clone(), point])
+            write_wkb(&FeatureGeometry::Point(Point::new(1.25, -7.5))),
+            point
+        );
+    }
+
+    #[test]
+    fn big_endian_members_decode_inside_a_little_endian_collection() {
+        let point = FeatureGeometry::Point(Point::new(3.0, 4.0));
+        let mut bytes = little_endian_header(7, Some(2));
+        bytes.extend(big_endian_line(&line()));
+        bytes.extend(write_wkb(&point));
+        assert_eq!(
+            read_wkb(&bytes).unwrap(),
+            FeatureGeometry::GeometryCollection(vec![FeatureGeometry::LineString(line()), point])
         );
     }
 
     #[test]
     fn truncated_input_errors_at_every_length() {
-        for geometry in every_type() {
-            let bytes = wkb(&geometry, true);
+        for (geometry, _) in every_type() {
+            let bytes = write_wkb(&geometry);
             for len in 0..bytes.len() {
                 assert!(read_wkb(&bytes[..len]).is_err(), "{geometry:?} at {len}");
             }
@@ -373,60 +418,83 @@ mod tests {
 
     #[test]
     fn unknown_type_and_wrong_member_error() {
-        let mut bytes = Writer::new(true);
-        bytes.header(8);
-        assert!(read_wkb(&bytes.out).is_err());
+        assert!(read_wkb(&little_endian_header(8, None)).is_err());
 
-        let mut bytes = Writer::new(true);
-        bytes.header(4);
-        bytes.count(1);
-        bytes
-            .out
-            .extend(wkb(&FeatureGeometry::LineString(line()), true));
-        assert!(read_wkb(&bytes.out).is_err());
+        let mut bytes = little_endian_header(4, Some(1));
+        bytes.extend(write_wkb(&FeatureGeometry::LineString(line())));
+        assert!(read_wkb(&bytes).is_err());
     }
 
     #[test]
     fn huge_ring_count_errors() {
-        let mut bytes = Writer::new(true);
-        bytes.header(3);
-        bytes.count(u32::MAX as usize);
-        assert!(read_wkb(&bytes.out).is_err());
+        assert!(read_wkb(&little_endian_header(3, Some(u32::MAX))).is_err());
+    }
+
+    #[test]
+    fn every_type_round_trips_through_a_geopackage_blob() {
+        for (geometry, _) in every_type() {
+            let blob = write_geopackage_geometry(&geometry, 32633);
+            assert_eq!(blob[..4], [b'G', b'P', 0, 0b0000_0011], "{geometry:?}");
+            assert_eq!(blob[4..8], 32633i32.to_le_bytes(), "{geometry:?}");
+            assert_eq!(read_geopackage_geometry(&blob).unwrap(), geometry);
+        }
+    }
+
+    #[test]
+    fn geopackage_blob_carries_the_xy_envelope() {
+        let blob = write_geopackage_geometry(
+            &FeatureGeometry::MultiPolygon(MultiPolygon::new(vec![
+                holed(),
+                square(20.0, -3.0, 1.0),
+            ])),
+            4326,
+        );
+        let bounds: Vec<f64> = blob[8..40]
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|b| f64::from_le_bytes(*b))
+            .collect();
+        assert_eq!(bounds, [0.0, 21.0, -3.0, 10.0]);
+    }
+
+    #[test]
+    fn empty_geometry_sets_the_empty_flag_without_an_envelope() {
+        let empty = FeatureGeometry::GeometryCollection(Vec::new());
+        let blob = write_geopackage_geometry(&empty, 4326);
+        assert_eq!(blob[3], 0b0001_0001);
+        assert_eq!(blob[8..], write_wkb(&empty));
+        assert_eq!(read_geopackage_geometry(&blob).unwrap(), empty);
     }
 
     #[test]
     fn geopackage_header_skips_each_envelope_size() {
         let geometry = FeatureGeometry::Polygon(square(1.0, 2.0, 3.0));
-        let wkb = wkb(&geometry, true);
-        for envelope_type in 0..=4 {
-            let decoded = read_geopackage_geometry(&gp_blob(envelope_type, &wkb)).unwrap();
+        let header = write_geopackage_geometry(&geometry, 4326)[..8].to_vec();
+        for (envelope_type, envelope_size) in [(0u8, 0), (1, 32), (2, 48), (3, 48), (4, 64)] {
+            let mut blob = header.clone();
+            blob[3] = (envelope_type << 1) | 1;
+            blob.extend(std::iter::repeat_n(0xAB, envelope_size));
+            blob.extend(write_wkb(&geometry));
+            let decoded = read_geopackage_geometry(&blob).unwrap();
             assert_eq!(decoded, geometry, "envelope type {envelope_type}");
         }
     }
 
     #[test]
     fn geopackage_header_errors() {
-        let wkb = wkb(&FeatureGeometry::Point(Point::new(0.0, 0.0)), true);
-        assert!(read_geopackage_geometry(&wkb).is_err());
+        let point = FeatureGeometry::Point(Point::new(0.0, 0.0));
+        assert!(read_geopackage_geometry(&write_wkb(&point)).is_err());
 
-        let mut bad_envelope = gp_blob(0, &wkb);
-        bad_envelope[3] = 5 << 1;
+        let blob = write_geopackage_geometry(&point, 4326);
+        let mut bad_envelope = blob.clone();
+        bad_envelope[3] = (5 << 1) | 1;
         assert!(read_geopackage_geometry(&bad_envelope).is_err());
 
-        let header_only = gp_blob(1, &[]);
-        assert!(read_geopackage_geometry(&header_only).is_err());
+        let header_only = &blob[..40];
+        assert!(read_geopackage_geometry(header_only).is_err());
 
-        let truncated = gp_blob(0, &wkb[..wkb.len() - 1]);
-        assert!(read_geopackage_geometry(&truncated).is_err());
-    }
-
-    #[test]
-    fn geopackage_empty_flag_is_an_empty_collection() {
-        let mut blob = gp_blob(0, &wkb(&FeatureGeometry::Point(Point::new(0.0, 0.0)), true));
-        blob[3] |= 0b0001_0000;
-        assert_eq!(
-            read_geopackage_geometry(&blob).unwrap(),
-            FeatureGeometry::GeometryCollection(Vec::new())
-        );
+        let truncated = &blob[..blob.len() - 1];
+        assert!(read_geopackage_geometry(truncated).is_err());
     }
 }

@@ -683,7 +683,7 @@ fn polygons_of(geometry: &FeatureGeometry) -> Option<&[Polygon]> {
     }
 }
 
-fn geometry_envelope(geometry: &FeatureGeometry) -> Option<Envelope> {
+pub(crate) fn geometry_envelope(geometry: &FeatureGeometry) -> Option<Envelope> {
     let mut coords = Vec::new();
     collect_coords(geometry, &mut coords);
     Envelope::from_coords(&coords)

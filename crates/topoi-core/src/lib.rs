@@ -49,4 +49,4 @@ pub use raster::{GridWindow, rasterize};
 pub use rtree::RTree;
 pub use validity::{ValidityIssue, ValidityKind, make_valid, validate};
 pub use voronoi::voronoi_polygons;
-pub use wkb::{read_geopackage_geometry, read_wkb};
+pub use wkb::{read_geopackage_geometry, read_wkb, write_geopackage_geometry, write_wkb};
