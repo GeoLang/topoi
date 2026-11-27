@@ -6,7 +6,6 @@
 //! polygon into several pieces or punch holes into it.
 
 use crate::geometry::{Coord, MultiPolygon, Polygon, Ring, signed_ring_area};
-use crate::predicates::point_in_ring;
 use i_overlay::core::fill_rule::FillRule;
 use i_overlay::core::overlay_rule::OverlayRule;
 use i_overlay::core::solver::Solver;
@@ -196,54 +195,14 @@ fn to_contour(ring: &Ring, ccw: bool) -> Vec<Coord> {
     contour
 }
 
-fn interior_point(ring: &Ring) -> Coord {
-    let coords = ring.coords();
-    let mut heights: Vec<f64> = coords.iter().map(|c| c.y).collect();
-    heights.sort_by(f64::total_cmp);
-    heights.dedup();
-    let y = (heights[0] + heights[1]) / 2.0;
-    let mut crossings: Vec<f64> = coords
-        .windows(2)
-        .filter(|edge| (edge[0].y > y) != (edge[1].y > y))
-        .map(|edge| edge[0].x + (y - edge[0].y) * (edge[1].x - edge[0].x) / (edge[1].y - edge[0].y))
-        .collect();
-    crossings.sort_by(f64::total_cmp);
-    Coord::new((crossings[0] + crossings[1]) / 2.0, y)
-}
-
-fn encloses(exterior: &Ring, hole: &Ring) -> bool {
-    signed_ring_area(exterior.coords()).abs() > signed_ring_area(hole.coords()).abs()
-        && point_in_ring(exterior, &interior_point(hole))
-}
-
 pub(crate) fn from_shapes(shapes: Shapes<Coord>) -> MultiPolygon {
-    let mut exteriors = Vec::with_capacity(shapes.len());
-    let mut interiors: Vec<Vec<Ring>> = Vec::with_capacity(shapes.len());
-    let mut misplaced = Vec::new();
-    for shape in shapes {
-        let mut rings = shape.into_iter().map(to_ring);
-        let exterior = rings.next().unwrap_or_else(|| Ring::new(Vec::new()));
-        let (inside, outside): (Vec<Ring>, Vec<Ring>) =
-            rings.partition(|hole| encloses(&exterior, hole));
-        misplaced.extend(outside);
-        exteriors.push(exterior);
-        interiors.push(inside);
-    }
-    // TODO: drop once iShape-Rust/iOverlay#104 is fixed, ogc output can attach a hole to an island inside a sibling hole
-    for hole in misplaced {
-        let owner = (0..exteriors.len())
-            .filter(|&i| encloses(&exteriors[i], &hole))
-            .min_by(|&a, &b| {
-                let area = |i: usize| signed_ring_area(exteriors[i].coords()).abs();
-                area(a).total_cmp(&area(b))
-            })
-            .expect("i_overlay returns every hole inside some exterior");
-        interiors[owner].push(hole);
-    }
-    let polygons = exteriors
+    let polygons = shapes
         .into_iter()
-        .zip(interiors)
-        .map(|(exterior, holes)| Polygon::new(exterior, holes))
+        .map(|shape| {
+            let mut rings = shape.into_iter().map(to_ring);
+            let exterior = rings.next().unwrap_or_else(|| Ring::new(Vec::new()));
+            Polygon::new(exterior, rings.collect())
+        })
         .collect();
     MultiPolygon::new(polygons)
 }

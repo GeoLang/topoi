@@ -3,9 +3,9 @@
 use crate::geojson::FeatureGeometry;
 use crate::geometry::{Coord, LineString, MultiPolygon, Polygon, Ring};
 use crate::overlay::{PolygonSet, from_shapes, to_shapes, union};
-use i_overlay::mesh::outline::offset::OutlineOffset;
-use i_overlay::mesh::stroke::offset::StrokeOffset;
-use i_overlay::mesh::style::{LineCap, LineJoin, OutlineStyle, StrokeStyle};
+use i_overlay::mesh::float::outline::offset::OutlineOffset;
+use i_overlay::mesh::float::stroke::offset::StrokeOffset;
+use i_overlay::mesh::float::style::{LineCap, LineJoin, OutlineStyle, StrokeStyle};
 use std::f64::consts::PI;
 
 /// Round joins take the maximum segment length over the arc radius, so this is
